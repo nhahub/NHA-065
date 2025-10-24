@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zypher AI - Logo Generator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <span class="logo-icon">🎨</span>
+                <span class="logo-text">Zypher AI</span>
+            </div>
+            <button class="new-chat-btn" onclick="newChat()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                New Chat
+            </button>
+        </div>
+
+        <div class="sidebar-content">
+            <div class="history-section">
+                <h3>Recent</h3>
+                <div id="historyList" class="history-list">
+                    <!-- History items will be populated here -->
+                </div>
+            </div>
+        </div>
+
+        <div class="sidebar-footer">
+            <button class="settings-btn" onclick="toggleSettings()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M12 1v6m0 6v6m-6-6h6m6 0h-6"></path>
+                </svg>
+                Settings
+            </button>
+            <div class="user-info">
+                <div class="user-avatar">AI</div>
+                <span>Flux Schnell</span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Mobile Header -->
+        <div class="mobile-header">
+            <button class="menu-btn" onclick="toggleSidebar()">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                    <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
+            </button>
+            <div class="logo">
+                <span class="logo-icon">🎨</span>
+                <span class="logo-text">Zypher AI</span>
+            </div>
+        </div>
+
+        <!-- Chat Container -->
+        <div class="chat-container" id="chatContainer">
+            <!-- Welcome Screen -->
+            <div class="welcome-screen" id="welcomeScreen">
+                <div class="welcome-content">
+                    <h1>
+                        <span class="logo-icon-large">🎨</span>
+                        Zypher AI Logo Generator
+                    </h1>
+                    <p class="subtitle">Powered by Flux Schnell - Create stunning logos with AI</p>
+                    
+                    <div class="example-prompts">
+                        <h3>Try these prompts:</h3>
+                        <div class="prompt-cards">
+                            <button class="prompt-card" onclick="usePrompt(this)">
+                                <span class="prompt-icon">🚀</span>
+                                <span class="prompt-text">A modern tech startup logo with a rocket symbol, gradient blue to purple, minimalist design</span>
+                            </button>
+                            <button class="prompt-card" onclick="usePrompt(this)">
+                                <span class="prompt-icon">🌿</span>
+                                <span class="prompt-text">An eco-friendly brand logo featuring a green leaf, circular design, natural colors, organic feel</span>
+                            </button>
+                            <button class="prompt-card" onclick="usePrompt(this)">
+                                <span class="prompt-icon">⚡</span>
+                                <span class="prompt-text">A fintech company logo with geometric shapes, electric blue and gold, professional and trustworthy</span>
+                            </button>
+                            <button class="prompt-card" onclick="usePrompt(this)">
+                                <span class="prompt-icon">🎮</span>
+                                <span class="prompt-text">A gaming studio logo with bold typography, neon colors, futuristic and energetic style</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Messages Container -->
+            <div class="messages" id="messages">
+                <!-- Messages will be appended here -->
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="input-container">
+            <div class="input-wrapper">
+                <textarea 
+                    id="promptInput" 
+                    placeholder="Describe your logo in detail..." 
+                    rows="1"
+                    onkeydown="handleKeyPress(event)"
+                    oninput="autoResize(this)"
+                ></textarea>
+                <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                </button>
+            </div>
+            <p class="input-hint">Press Enter to send, Shift+Enter for new line</p>
+        </div>
+    </main>
+
+    <!-- Settings Modal -->
+    <div class="modal" id="settingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button class="close-btn" onclick="toggleSettings()">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-group">
+                    <label class="setting-label">
+                        <input type="checkbox" id="useLoraToggle">
+                        <span class="checkmark"></span>
+                        Use LoRA Fine-tuned Model
+                    </label>
+                    <p class="setting-description">Enable your custom trained weights for specialized styles</p>
+                </div>
+
+                <div class="setting-group">
+                    <label for="stepsSlider">Inference Steps: <span id="stepsValue">4</span></label>
+                    <input type="range" id="stepsSlider" min="1" max="8" value="4" oninput="updateStepsValue(this.value)">
+                    <p class="setting-description">Flux Schnell is optimized for 1-4 steps (faster = less detailed)</p>
+                </div>
+
+                <div class="setting-group">
+                    <label for="widthSlider">Width: <span id="widthValue">1024</span>px</label>
+                    <input type="range" id="widthSlider" min="512" max="1536" step="64" value="1024" oninput="updateWidthValue(this.value)">
+                </div>
+
+                <div class="setting-group">
+                    <label for="heightSlider">Height: <span id="heightValue">1024</span>px</label>
+                    <input type="range" id="heightSlider" min="512" max="1536" step="64" value="1024" oninput="updateHeightValue(this.value)">
+                </div>
+
+                <div class="setting-group">
+                    <button class="secondary-btn" onclick="loadModelStatus()">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="16" x2="12" y2="12"></line>
+                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                        </svg>
+                        Check Model Status
+                    </button>
+                </div>
+
+                <div id="modelStatus" class="model-status" style="display: none;">
+                    <!-- Model status will be displayed here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+        <div class="loading-spinner"></div>
+        <p>Generating your logo...</p>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

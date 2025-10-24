@@ -1,6 +1,10 @@
 # Zypher AI Logo Generator - Requirements
 
-# Core Dependencies
+# Web Framework (NEW ChatGPT-style interface)
+flask>=3.0.0
+flask-cors>=4.0.0
+
+# Core Dependencies (Original Gradio interface)
 gradio>=4.0.0
 torch>=2.0.0
 diffusers>=0.25.0

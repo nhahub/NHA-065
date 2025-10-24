@@ -1,20 +1,32 @@
 # 🎨 Zypher AI Logo Generator
 
-An AI-powered logo generator built with **Flux Schnell** and **Gradio**. Zypher allows you to create stunning, professional logos using text prompts with support for custom LoRA models.
+An AI-powered logo generator built with **Flux Schnell** and **Gradio**. Zypher features a stunning, **Claude-inspired modern interface** for creating professional logos using text prompts with support for custom LoRA models.
 
 ![Powered by Flux Schnell](https://img.shields.io/badge/Powered%20by-Flux%20Schnell-blueviolet)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![Gradio](https://img.shields.io/badge/Gradio-4.0+-orange)
+![UI](https://img.shields.io/badge/UI-Modern%20%26%20Futuristic-blueviolet)
 
 ## ✨ Features
 
-- 🚀 **Fast Generation**: Powered by Flux Schnell (optimized for 1-4 step generation)
-- 🎯 **Custom LoRA Support**: Easily switch between base model and your trained LoRA
-- 💬 **Chat Interface**: Intuitive Gradio interface with prompt input
-- 📜 **Chat History**: Automatic saving and display of generation history
-- 🖼️ **Image Management**: All generated logos saved automatically
-- ⚙️ **Customizable Settings**: Adjust steps, resolution, and LoRA strength
-- 🎨 **Clean UI**: Beautiful, user-friendly web interface
+### 🎯 Core Features
+- 🚀 **Lightning Fast Generation**: Powered by Flux Schnell (optimized for 1-4 step generation)
+- 🔮 **Custom LoRA Support**: Seamlessly switch between base model and your trained LoRA
+- 💬 **Intelligent Chat Interface**: Claude-inspired conversational UI
+- 📜 **Persistent History**: Automatic saving and beautiful display of generation history
+- 🖼️ **Smart Image Management**: All generated logos saved automatically with metadata
+- ⚙️ **Customizable Settings**: Fine-tune steps, resolution, and LoRA strength
+- 📊 **Real-time Status**: Detailed feedback with rich formatting
+
+### 🎨 Modern UI (NEW!)
+- ✨ **Claude-Inspired Design**: Clean, professional, and futuristic interface
+- 🌈 **Gradient Aesthetics**: Beautiful purple-indigo color scheme
+- 💎 **Glassmorphism Effects**: Modern blurred backgrounds and depth
+- 🎯 **3-Column Layout**: Optimized workspace with controls, output, and history
+- 📱 **Fully Responsive**: Works perfectly on desktop, tablet, and mobile
+- 🎭 **Custom Avatars**: Personalized user and AI avatars in chat
+- ⚡ **Smooth Animations**: Hover effects, transitions, and micro-interactions
+- 🔧 **Collapsible Settings**: Clean interface with advanced options tucked away
 
 ## 📁 Project Structure
 
@@ -76,31 +88,94 @@ The application will start on `http://localhost:7860`
 
 ### Basic Generation
 
-1. Open the web interface at `http://localhost:7860`
-2. Enter your logo description in the prompt box
-   - Example: *"A modern tech company logo with blue and silver colors, minimalist design"*
-3. Click **"🚀 Generate Logo"**
-4. Your logo will appear in the center panel
+1. **Open the interface** at `http://localhost:7860`
+2. **Enter your prompt** in the large text area
+   - Example: *"A modern tech startup logo featuring a geometric hexagon, gradient from deep blue to cyan, minimalist professional design"*
+3. **Click the "✨ Generate Logo"** button (the big gradient button)
+4. **View your logo** in the center panel
+5. **Check the status box** below for detailed generation info
 
 ### Using LoRA
 
-1. Check the **"Use LoRA Model"** checkbox
-2. Enter your prompt
-3. Generate as usual
-4. The system will automatically load your LoRA weights
+1. ✅ Check the **"🔮 Use LoRA Fine-tuned Model"** checkbox
+2. 💬 Enter your prompt as usual
+3. ✨ Click generate
+4. 🎨 The system will automatically apply your custom LoRA weights
 
 ### Advanced Settings
 
-Click on **"Advanced Settings"** to customize:
-- **Inference Steps**: 1-8 (recommended: 1-4 for Flux Schnell)
-- **Width/Height**: 512-1536 pixels (default: 1024x1024)
+Click on **"🎛️ Advanced Parameters"** accordion to reveal:
+- **⚡ Inference Steps**: 1-8 (recommended: 1-4 for Flux Schnell)
+  - Lower = Faster, Higher = More refined
+- **📐 Image Dimensions**: 
+  - Width: 512-1536 pixels
+  - Height: 512-1536 pixels
+  - Default: 1024×1024 (perfect for logos)
 
 ### Managing History
 
-- View all your generations in the **Chat History** panel
-- Click **"🗑️ Clear History"** to reset
-- History is automatically saved to `chat_logs/chat_history.json`
-- All images are saved to the `outputs/` folder
+- **View**: All generations appear in the right sidebar with chat-style formatting
+- **Clear**: Click **"🗑️ Clear History"** to reset
+- **Persistence**: History is auto-saved to `chat_logs/chat_history.json`
+- **Images**: All generated images are in the `outputs/` folder
+
+### Model Status
+
+Click **"📊 Model Info"** to see:
+- Base model loading status
+- LoRA model availability
+- GPU/CPU device information
+- Current model configuration
+
+## 🎨 UI Overview
+
+### Layout Structure
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              🎨 Zypher AI Logo Generator                    │
+│         Powered by Flux Schnell • AI-Driven Generation     │
+└─────────────────────────────────────────────────────────────┘
+
+┌──────────────┬─────────────────────┬──────────────────────┐
+│  Controls    │   Generated Output  │  Generation History  │
+│  (30%)       │        (40%)        │       (30%)          │
+├──────────────┼─────────────────────┼──────────────────────┤
+│              │                     │                      │
+│ 💬 Prompt    │  🖼️ Your Logo      │ 📜 Chat History      │
+│  [Text Box]  │                     │                      │
+│              │   [Large Image]     │  [Chat Messages]     │
+│ ✨ Generate  │                     │                      │
+│              │   [Download]        │  [Scrollable]        │
+│ ⚙️ Settings  │                     │                      │
+│  • LoRA      │                     │                      │
+│  • Advanced  │                     │                      │
+│              │                     │                      │
+│ 📊 Status    │                     │                      │
+│              │                     │                      │
+└──────────────┴─────────────────────┴──────────────────────┘
+
+💡 Pro Tips • Documentation • Quick Help
+```
+
+### Color Scheme
+
+- **Primary**: Indigo (#667eea) → Purple (#764ba2) gradient
+- **Background**: Light gradient with depth
+- **Cards**: White with soft shadows
+- **Text**: Professional dark gray
+- **Accents**: Success green, warning amber, error red
+
+### Design Philosophy
+
+The interface follows **Claude AI's design principles**:
+1. ✨ **Minimalism** - Focus on what matters
+2. 🎯 **Clarity** - Clear visual hierarchy
+3. 💼 **Professionalism** - Enterprise-grade appearance
+4. 🚀 **Performance** - Smooth and responsive
+5. ♿ **Accessibility** - Proper contrast and spacing
+
+For more details, see [UI_FEATURES.md](UI_FEATURES.md) and [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md).
 
 ## ⚙️ Configuration
 
