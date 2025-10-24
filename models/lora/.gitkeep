@@ -1,0 +1,3 @@
+# models/lora/
+# Place your trained LoRA weights (.safetensors files) in this directory
+# Update the LORA_WEIGHTS_FILE in config.py to match your filename

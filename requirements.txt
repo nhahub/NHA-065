@@ -1,0 +1,19 @@
+# Zypher AI Logo Generator - Requirements
+
+# Core Dependencies
+gradio>=4.0.0
+torch>=2.0.0
+diffusers>=0.25.0
+transformers>=4.35.0
+accelerate>=0.25.0
+safetensors>=0.4.0
+
+# Image Processing
+pillow>=10.0.0
+
+# Additional Utilities
+numpy>=1.24.0
+huggingface-hub>=0.19.0
+
+# Optional: For better performance
+# xformers>=0.0.22  # Uncomment for faster attention (requires compatible GPU)

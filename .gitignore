@@ -1,0 +1,36 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# Generated outputs
+outputs/*.png
+outputs/*.jpg
+outputs/*.jpeg
+chat_logs/*.json
+
+# Model weights (large files)
+models/lora/*.safetensors
+models/lora/*.ckpt
+models/lora/*.pt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Gradio cache
+gradio_cached_examples/
