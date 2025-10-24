@@ -32,17 +32,27 @@ An AI-powered logo generator built with **Flux Schnell** and **Gradio**. Zypher 
 
 ```
 NHA-065/
-├── app.py                 # Main Gradio application
-├── config.py              # Configuration settings
-├── requirements.txt       # Python dependencies
-├── README.md             # This file
-├── models/               # Model storage
-│   └── lora/            # Place your LoRA weights here
-├── utils/               # Utility modules
+├── app_flask.py           # Flask web application (NEW)
+├── templates/            # HTML templates
+│   └── index.html       # ChatGPT-style interface
+├── static/              # Static assets
+│   ├── css/
+│   │   └── style.css   # Modern styling
+│   └── js/
+│       └── app.js      # Frontend JavaScript
+├── app.py                # Original Gradio application
+├── config.py             # Configuration settings
+├── .env                 # Environment variables (NOT in git)
+├── .env.example         # Example environment file
+├── requirements.txt      # Python dependencies
+├── README.md            # This file
+├── models/              # Model storage
+│   └── lora/           # Place your LoRA weights here
+├── utils/              # Utility modules
 │   ├── model_manager.py # Model loading and inference
 │   └── chat_history.py  # Chat history management
-├── outputs/             # Generated images
-└── chat_logs/          # Chat history JSON files
+├── outputs/            # Generated images
+└── chat_logs/         # Chat history JSON files
 ```
 
 ## 🚀 Getting Started
@@ -72,17 +82,39 @@ NHA-065/
    pip install -r requirements.txt
    ```
 
-4. **Set up your LoRA model** (optional)
+4. **Set up your Hugging Face token** (required)
+   ```powershell
+   # Copy the example env file
+   Copy-Item .env.example .env
+   
+   # Edit .env and add your Hugging Face token
+   # Get your token from: https://huggingface.co/settings/tokens
+   # You also need to accept the model license at:
+   # https://huggingface.co/black-forest-labs/FLUX.1-schnell
+   ```
+   
+   Edit `.env` and replace `your_huggingface_token_here` with your actual token:
+   ```
+   HUGGINGFACE_TOKEN=hf_your_actual_token_here
+   ```
+
+5. **Set up your LoRA model** (optional)
    - Place your trained LoRA weights in `models/lora/`
    - Update the `LORA_WEIGHTS_FILE` in `config.py` with your filename
 
 ### Running the Application
 
 ```powershell
+# Run the modern ChatGPT-style interface (recommended)
+python app_flask.py
+
+# Or run the original Gradio interface
 python app.py
 ```
 
 The application will start on `http://localhost:7860`
+
+**Important**: Make sure you have set up your Hugging Face token in the `.env` file before running!
 
 ## 🎯 Usage
 
@@ -222,6 +254,19 @@ SHARE_LINK = False  # Set True for public link
 - Adjust `LORA_SCALE` in config.py to control LoRA influence
 
 ## 🛠️ Troubleshooting
+
+### Authentication Error
+- **Error**: "This model requires authentication"
+- **Solution**: 
+  1. Get your token from https://huggingface.co/settings/tokens
+  2. Accept the model license at https://huggingface.co/black-forest-labs/FLUX.1-schnell
+  3. Add token to `.env` file: `HUGGINGFACE_TOKEN=hf_your_token`
+  4. Restart the application
+
+### .env File Not Working
+- Ensure the file is named exactly `.env` (not `.env.txt`)
+- Check that `python-dotenv` is installed: `pip install python-dotenv`
+- Verify the token format: should start with `hf_`
 
 ### Out of Memory Error
 - Reduce image resolution in settings

@@ -5,7 +5,10 @@ let currentSettings = {
     use_lora: false,
     num_steps: 4,
     width: 1024,
-    height: 1024
+    height: 1024,
+    use_ip_adapter: false,
+    ip_adapter_scale: 0.5,
+    reference_image: null
 };
 
 let conversationHistory = [];
@@ -77,19 +80,25 @@ async function sendMessage() {
     showLoading();
     
     try {
+        // Prepare request data
+        const formData = new FormData();
+        formData.append('prompt', prompt);
+        formData.append('use_lora', currentSettings.use_lora);
+        formData.append('num_steps', currentSettings.num_steps);
+        formData.append('width', currentSettings.width);
+        formData.append('height', currentSettings.height);
+        formData.append('use_ip_adapter', currentSettings.use_ip_adapter);
+        formData.append('ip_adapter_scale', currentSettings.ip_adapter_scale);
+        
+        // Add reference image if provided
+        if (currentSettings.use_ip_adapter && currentSettings.reference_image) {
+            formData.append('reference_image', currentSettings.reference_image);
+        }
+        
         // Send request
         const response = await fetch('/api/generate', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                prompt: prompt,
-                use_lora: currentSettings.use_lora,
-                num_steps: currentSettings.num_steps,
-                width: currentSettings.width,
-                height: currentSettings.height
-            })
+            body: formData
         });
         
         const data = await response.json();
@@ -160,6 +169,12 @@ function addMessage(role, text, imageUrl = null, metadata = null, filename = nul
                     <span class="metadata-label">Dimensions:</span>
                     <span>${metadata.dimensions}</span>
                 </div>
+                ${metadata.ip_adapter ? `
+                <div class="metadata-row">
+                    <span class="metadata-label">IP-Adapter Scale:</span>
+                    <span>${(metadata.ip_adapter_scale * 100).toFixed(0)}%</span>
+                </div>
+                ` : ''}
                 <div class="metadata-row">
                     <span class="metadata-label">Generated:</span>
                     <span>${metadata.timestamp}</span>
@@ -264,6 +279,52 @@ function updateHeightValue(value) {
     currentSettings.height = parseInt(value);
 }
 
+function updateIpAdapterScale(value) {
+    document.getElementById('ipAdapterScaleValueInline').textContent = value;
+    currentSettings.ip_adapter_scale = parseFloat(value) / 100;
+}
+
+// Toggle IP-Adapter
+function toggleIpAdapter(enabled) {
+    currentSettings.use_ip_adapter = enabled;
+    const referenceContent = document.getElementById('referenceContent');
+    referenceContent.style.display = enabled ? 'block' : 'none';
+}
+
+// Handle image upload
+function handleImageUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+        alert('Please upload an image file (JPG, PNG, WEBP)');
+        return;
+    }
+    
+    // Store file
+    currentSettings.reference_image = file;
+    
+    // Show preview
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        document.getElementById('previewImgInline').src = e.target.result;
+        document.getElementById('uploadAreaInline').style.display = 'none';
+        document.getElementById('imagePreviewInline').style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+}
+
+// Remove reference image
+function removeReferenceImage(event) {
+    if (event) event.stopPropagation();
+    currentSettings.reference_image = null;
+    document.getElementById('referenceImageInput').value = '';
+    document.getElementById('previewImgInline').src = '';
+    document.getElementById('uploadAreaInline').style.display = 'flex';
+    document.getElementById('imagePreviewInline').style.display = 'none';
+}
+
 // Save settings
 document.addEventListener('change', (e) => {
     if (e.target.id === 'useLoraToggle') {
@@ -287,6 +348,7 @@ async function loadModelStatus() {
                 <pre>
 Base Model: ${model.base_model_loaded ? '✅ Loaded' : '❌ Not loaded'}
 LoRA Model: ${model.lora_loaded ? '✅ Loaded' : '⚠️ Not loaded'}
+IP-Adapter: ${model.ip_adapter_loaded ? '✅ Loaded' : '⚠️ Not loaded'}
 Device: ${model.device}
 Model ID: ${model.model_id || 'None'}
 Status: ${model.base_model_loaded ? '🟢 Ready' : '🔴 Not ready'}

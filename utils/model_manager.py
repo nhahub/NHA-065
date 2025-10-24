@@ -1,21 +1,27 @@
 """
 Model Manager for Zypher AI Logo Generator
-Handles loading and managing Flux Schnell model with optional LoRA
+Handles loading and managing Flux Schnell model with optional LoRA and IP-Adapter
 """
 import torch
 from diffusers import FluxPipeline
+from PIL import Image
 import os
+from dotenv import load_dotenv
 import config
 
+# Load environment variables
+load_dotenv()
 
 class ModelManager:
-    """Manages the Flux Schnell model and LoRA weights"""
+    """Manages the Flux Schnell model, LoRA weights, and IP-Adapter"""
     
     def __init__(self):
         self.pipeline = None
         self.device = config.GPU_DEVICE if config.USE_GPU and torch.cuda.is_available() else "cpu"
         self.lora_loaded = False
         self.base_model_loaded = False
+        self.ip_adapter_loaded = False
+        self.hf_token = os.getenv("HUGGINGFACE_TOKEN")
         
     def load_base_model(self):
         """Load the base Flux Schnell model"""
@@ -25,9 +31,19 @@ class ModelManager:
             
         try:
             print(f"Loading Flux Schnell model on {self.device}...")
+            
+            # Check if token is available
+            if not self.hf_token or self.hf_token == "your_huggingface_token_here":
+                print("⚠️  WARNING: HUGGINGFACE_TOKEN not set in .env file")
+                print("   Get your token from: https://huggingface.co/settings/tokens")
+                print("   Attempting to download without authentication...")
+            else:
+                print("✓ Using Hugging Face authentication token")
+            
             self.pipeline = FluxPipeline.from_pretrained(
                 config.BASE_MODEL_ID,
-                torch_dtype=torch.bfloat16 if self.device != "cpu" else torch.float32
+                torch_dtype=torch.bfloat16 if self.device != "cpu" else torch.float32,
+                token=self.hf_token if self.hf_token and self.hf_token != "your_huggingface_token_here" else None
             )
             self.pipeline.to(self.device)
             
@@ -40,6 +56,12 @@ class ModelManager:
             print("✓ Base model loaded successfully")
         except Exception as e:
             print(f"Error loading base model: {e}")
+            if "gated" in str(e).lower() or "access" in str(e).lower():
+                print("\n❌ Authentication Error!")
+                print("   This model requires authentication. Please:")
+                print("   1. Get your token from: https://huggingface.co/settings/tokens")
+                print("   2. Add it to the .env file: HUGGINGFACE_TOKEN=your_token_here")
+                print("   3. Accept the model's license at: https://huggingface.co/black-forest-labs/FLUX.1-schnell")
             raise
     
     def load_lora(self):
@@ -80,13 +102,40 @@ class ModelManager:
             except Exception as e:
                 print(f"Error unloading LoRA: {e}")
     
-    def generate_image(self, prompt, use_lora=False, **kwargs):
+    def load_ip_adapter(self):
+        """Load IP-Adapter for image-to-image conditioning"""
+        if not self.base_model_loaded:
+            self.load_base_model()
+        
+        if self.ip_adapter_loaded:
+            print("IP-Adapter already loaded")
+            return
+        
+        try:
+            print("Loading IP-Adapter...")
+            # Load IP-Adapter weights with authentication token
+            self.pipeline.load_ip_adapter(
+                "h94/IP-Adapter", 
+                subfolder="models",
+                weight_name="ip-adapter_sd15.bin",
+                token=self.hf_token if self.hf_token and self.hf_token != "your_huggingface_token_here" else None
+            )
+            self.ip_adapter_loaded = True
+            print("✓ IP-Adapter loaded successfully")
+        except Exception as e:
+            print(f"Note: IP-Adapter loading failed: {e}")
+            print("Continuing without IP-Adapter support...")
+            self.ip_adapter_loaded = False
+    
+    def generate_image(self, prompt, use_lora=False, reference_image=None, ip_adapter_scale=0.5, **kwargs):
         """
-        Generate an image from a text prompt
+        Generate an image from a text prompt, optionally with a reference image
         
         Args:
             prompt (str): Text description of the logo to generate
             use_lora (bool): Whether to use LoRA weights
+            reference_image (PIL.Image or str): Reference image for IP-Adapter
+            ip_adapter_scale (float): Strength of IP-Adapter influence (0.0-1.0)
             **kwargs: Additional generation parameters
             
         Returns:
@@ -100,21 +149,53 @@ class ModelManager:
         elif not self.base_model_loaded:
             self.load_base_model()
         
+        # Load IP-Adapter if reference image provided and not loaded
+        if reference_image is not None and not self.ip_adapter_loaded:
+            self.load_ip_adapter()
+        
+        # Process reference image if provided
+        if reference_image is not None:
+            if isinstance(reference_image, str):
+                # Load from path
+                reference_image = Image.open(reference_image).convert("RGB")
+            elif not isinstance(reference_image, Image.Image):
+                raise ValueError("reference_image must be a PIL Image or file path")
+        
         # Merge default params with custom ones
         gen_params = config.DEFAULT_GENERATION_PARAMS.copy()
         gen_params.update(kwargs)
         
         try:
-            print(f"Generating image with {'LoRA' if use_lora else 'base model'}...")
+            mode = []
+            if use_lora:
+                mode.append("LoRA")
+            if reference_image is not None:
+                mode.append(f"IP-Adapter (scale: {ip_adapter_scale})")
+            mode_str = " + ".join(mode) if mode else "base model"
+            
+            print(f"Generating image with {mode_str}...")
             print(f"Prompt: {prompt}")
+            
+            # Prepare generation arguments
+            gen_args = {
+                "prompt": prompt,
+                **gen_params
+            }
+            
+            # Add IP-Adapter arguments if reference image provided
+            if reference_image is not None and self.ip_adapter_loaded:
+                gen_args["ip_adapter_image"] = reference_image
+                gen_args["ip_adapter_image_embeds"] = None
+                # Set IP-Adapter scale
+                self.pipeline.set_ip_adapter_scale(ip_adapter_scale)
+            
+            # Add LoRA scale if using LoRA
+            if use_lora:
+                gen_args["cross_attention_kwargs"] = {"scale": config.LORA_SCALE}
             
             # Generate image
             with torch.inference_mode():
-                result = self.pipeline(
-                    prompt=prompt,
-                    **gen_params,
-                    cross_attention_kwargs={"scale": config.LORA_SCALE} if use_lora else None
-                )
+                result = self.pipeline(**gen_args)
             
             image = result.images[0]
             print("✓ Image generated successfully")
@@ -129,6 +210,7 @@ class ModelManager:
         return {
             "base_model_loaded": self.base_model_loaded,
             "lora_loaded": self.lora_loaded,
+            "ip_adapter_loaded": self.ip_adapter_loaded,
             "device": self.device,
             "model_id": config.BASE_MODEL_ID if self.base_model_loaded else None
         }

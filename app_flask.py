@@ -39,23 +39,56 @@ def index():
 @app.route('/api/generate', methods=['POST'])
 def generate_logo():
     """
-    Generate logo from prompt
+    Generate logo from prompt with optional reference image
     Endpoint: POST /api/generate
-    Body: {
+    Content-Type: multipart/form-data or application/json
+    
+    Form Data / JSON Body: {
         "prompt": "string",
         "use_lora": boolean,
         "num_steps": int,
         "width": int,
-        "height": int
+        "height": int,
+        "use_ip_adapter": boolean (optional),
+        "ip_adapter_scale": float (optional, 0.0-1.0),
+        "reference_image": file (optional, for multipart/form-data)
     }
     """
     try:
-        data = request.json
-        prompt = data.get('prompt', '').strip()
-        use_lora = data.get('use_lora', False)
-        num_steps = data.get('num_steps', 4)
-        width = data.get('width', 1024)
-        height = data.get('height', 1024)
+        # Handle both JSON and form data
+        if request.content_type and 'multipart/form-data' in request.content_type:
+            # Form data with file upload
+            prompt = request.form.get('prompt', '').strip()
+            use_lora = request.form.get('use_lora', 'false').lower() == 'true'
+            num_steps = int(request.form.get('num_steps', 4))
+            width = int(request.form.get('width', 1024))
+            height = int(request.form.get('height', 1024))
+            use_ip_adapter = request.form.get('use_ip_adapter', 'false').lower() == 'true'
+            ip_adapter_scale = float(request.form.get('ip_adapter_scale', 0.5))
+            
+            # Get reference image if uploaded
+            reference_image = None
+            if use_ip_adapter and 'reference_image' in request.files:
+                file = request.files['reference_image']
+                if file and file.filename:
+                    reference_image = Image.open(file.stream).convert('RGB')
+        else:
+            # JSON data
+            data = request.json
+            prompt = data.get('prompt', '').strip()
+            use_lora = data.get('use_lora', False)
+            num_steps = data.get('num_steps', 4)
+            width = data.get('width', 1024)
+            height = data.get('height', 1024)
+            use_ip_adapter = data.get('use_ip_adapter', False)
+            ip_adapter_scale = data.get('ip_adapter_scale', 0.5)
+            
+            # Handle base64 encoded reference image
+            reference_image = None
+            if use_ip_adapter and 'reference_image_base64' in data:
+                import base64
+                img_data = base64.b64decode(data['reference_image_base64'].split(',')[1])
+                reference_image = Image.open(io.BytesIO(img_data)).convert('RGB')
         
         if not prompt:
             return jsonify({
@@ -67,6 +100,8 @@ def generate_logo():
         image = model_manager.generate_image(
             prompt=prompt,
             use_lora=use_lora,
+            reference_image=reference_image if use_ip_adapter else None,
+            ip_adapter_scale=ip_adapter_scale if use_ip_adapter else 0.5,
             num_inference_steps=num_steps,
             width=width,
             height=height
@@ -88,6 +123,16 @@ def generate_logo():
         # Add to chat history
         chat_history.add_entry(prompt, image_path, use_lora)
         
+        # Build model description
+        model_parts = []
+        if use_lora:
+            model_parts.append("LoRA Fine-tuned")
+        else:
+            model_parts.append("Base Flux Schnell")
+        if use_ip_adapter:
+            model_parts.append(f"IP-Adapter ({ip_adapter_scale:.1%})")
+        model_desc = " + ".join(model_parts)
+        
         # Return response
         return jsonify({
             'success': True,
@@ -95,9 +140,11 @@ def generate_logo():
             'filename': filename,
             'path': image_path,
             'metadata': {
-                'model': 'LoRA Fine-tuned' if use_lora else 'Base Flux Schnell',
+                'model': model_desc,
                 'steps': num_steps,
                 'dimensions': f"{width}×{height}",
+                'ip_adapter': use_ip_adapter,
+                'ip_adapter_scale': ip_adapter_scale if use_ip_adapter else None,
                 'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
         })
