@@ -59,12 +59,11 @@
                 <span class="logo-text">Zypher AI</span>
             </div>
             <div class="header-spacer"></div>
-            <button class="settings-btn-header" onclick="toggleSettings()">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <button class="settings-icon-btn" onclick="toggleSettings()" title="Settings">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="3"></circle>
                     <path d="M12 1v6m0 6v6M5.6 5.6l4.2 4.2m4.2 4.2l4.2 4.2M1 12h6m6 0h6m-1.4-6.4l-4.2 4.2m-4.2 4.2l-4.2 4.2"></path>
                 </svg>
-                <span class="desktop-only">Settings</span>
             </button>
         </div>
 
@@ -112,81 +111,68 @@
         <!-- Input Area -->
         <div class="input-container">
             <div class="input-area-wrapper">
-                <!-- Reference Image Section -->
-                <div class="reference-image-section" id="referenceImageSection">
-                    <div class="reference-header">
-                        <div class="reference-title">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                                <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                                <polyline points="21 15 16 10 5 21"></polyline>
-                            </svg>
-                            <span>Reference Image</span>
-                            <span class="optional-badge">Optional</span>
-                        </div>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="useIpAdapterToggleInput" onchange="toggleIpAdapter(this.checked)">
-                            <span class="toggle-slider"></span>
-                        </label>
-                    </div>
-                    
-                    <div class="reference-content" id="referenceContent" style="display: none;">
-                        <div class="image-upload-inline">
-                            <input type="file" id="referenceImageInput" accept="image/*" style="display: none;" onchange="handleImageUpload(event)">
-                            <div class="upload-area-inline" id="uploadAreaInline" onclick="document.getElementById('referenceImageInput').click()">
-                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <!-- Main Input Box with Image Upload -->
+                <div class="input-box">
+                    <!-- Image Attachment Area (Always Visible) -->
+                    <div class="attachment-area">
+                        <input type="file" id="referenceImageInput" accept="image/*" style="display: none;" onchange="handleImageUpload(event)">
+                        
+                        <!-- Image Preview or Upload Button -->
+                        <div class="image-attachment-container" id="imageAttachmentContainer">
+                            <button class="attach-image-btn" onclick="document.getElementById('referenceImageInput').click()" title="Attach reference image">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
                                     <circle cx="8.5" cy="8.5" r="1.5"></circle>
                                     <polyline points="21 15 16 10 5 21"></polyline>
                                 </svg>
-                                <p>Click to upload</p>
-                            </div>
-                            <div class="image-preview-inline" id="imagePreviewInline" style="display: none;">
-                                <img id="previewImgInline" src="" alt="Reference">
-                                <div class="preview-overlay">
-                                    <button class="remove-image-btn-inline" onclick="removeReferenceImage(event)">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            </button>
+                        </div>
+                        
+                        <!-- Image Preview (Hidden by default) -->
+                        <div class="image-preview-compact" id="imagePreviewCompact" style="display: none;">
+                            <div class="preview-wrapper">
+                                <img id="previewImgCompact" src="" alt="Reference">
+                                <div class="preview-actions">
+                                    <button class="remove-preview-btn" onclick="removeReferenceImage(event)" title="Remove image">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                             <line x1="18" y1="6" x2="6" y2="18"></line>
                                             <line x1="6" y1="6" x2="18" y2="18"></line>
                                         </svg>
                                     </button>
-                                    <button class="change-image-btn" onclick="document.getElementById('referenceImageInput').click()">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                                        </svg>
-                                    </button>
                                 </div>
                             </div>
-                        </div>
-                        
-                        <div class="strength-control">
-                            <label for="ipAdapterScaleSliderInline">
-                                Influence Strength: <span id="ipAdapterScaleValueInline">50</span>%
-                            </label>
-                            <input type="range" id="ipAdapterScaleSliderInline" min="0" max="100" value="50" oninput="updateIpAdapterScale(this.value)">
+                            <!-- Strength Slider -->
+                            <div class="strength-slider-compact">
+                                <label for="ipAdapterScaleSlider">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                                    </svg>
+                                    <span id="ipAdapterScaleValue">50</span>%
+                                </label>
+                                <input type="range" id="ipAdapterScaleSlider" min="0" max="100" value="50" oninput="updateIpAdapterScale(this.value)">
+                            </div>
                         </div>
                     </div>
-                </div>
-                
-                <!-- Text Input -->
-                <div class="input-wrapper">
-                    <textarea 
-                        id="promptInput" 
-                        placeholder="Describe your logo in detail..." 
-                        rows="1"
-                        onkeydown="handleKeyPress(event)"
-                        oninput="autoResize(this)"
-                    ></textarea>
-                    <button class="send-btn" id="sendBtn" onclick="sendMessage()">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="22" y1="2" x2="11" y2="13"></line>
-                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                        </svg>
-                    </button>
+                    
+                    <!-- Text Input Area -->
+                    <div class="input-wrapper">
+                        <textarea 
+                            id="promptInput" 
+                            placeholder="Describe your logo... (attach an image for style reference)" 
+                            rows="1"
+                            onkeydown="handleKeyPress(event)"
+                            oninput="autoResize(this)"
+                        ></textarea>
+                        <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="22" y1="2" x2="11" y2="13"></line>
+                                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
             </div>
-            <p class="input-hint">Press Enter to send, Shift+Enter for new line • Toggle reference image to create logos inspired by your own images</p>
+            <p class="input-hint">Press Enter to send, Shift+Enter for new line • Attach images to use them as style references</p>
         </div>
     </main>
 

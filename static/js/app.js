@@ -280,15 +280,8 @@ function updateHeightValue(value) {
 }
 
 function updateIpAdapterScale(value) {
-    document.getElementById('ipAdapterScaleValueInline').textContent = value;
+    document.getElementById('ipAdapterScaleValue').textContent = value;
     currentSettings.ip_adapter_scale = parseFloat(value) / 100;
-}
-
-// Toggle IP-Adapter
-function toggleIpAdapter(enabled) {
-    currentSettings.use_ip_adapter = enabled;
-    const referenceContent = document.getElementById('referenceContent');
-    referenceContent.style.display = enabled ? 'block' : 'none';
 }
 
 // Handle image upload
@@ -304,13 +297,14 @@ function handleImageUpload(event) {
     
     // Store file
     currentSettings.reference_image = file;
+    currentSettings.use_ip_adapter = true; // Enable IP-Adapter when image is uploaded
     
     // Show preview
     const reader = new FileReader();
     reader.onload = function(e) {
-        document.getElementById('previewImgInline').src = e.target.result;
-        document.getElementById('uploadAreaInline').style.display = 'none';
-        document.getElementById('imagePreviewInline').style.display = 'block';
+        document.getElementById('previewImgCompact').src = e.target.result;
+        document.getElementById('imageAttachmentContainer').style.display = 'none';
+        document.getElementById('imagePreviewCompact').style.display = 'flex';
     };
     reader.readAsDataURL(file);
 }
@@ -319,10 +313,11 @@ function handleImageUpload(event) {
 function removeReferenceImage(event) {
     if (event) event.stopPropagation();
     currentSettings.reference_image = null;
+    currentSettings.use_ip_adapter = false; // Disable IP-Adapter when image is removed
     document.getElementById('referenceImageInput').value = '';
-    document.getElementById('previewImgInline').src = '';
-    document.getElementById('uploadAreaInline').style.display = 'flex';
-    document.getElementById('imagePreviewInline').style.display = 'none';
+    document.getElementById('previewImgCompact').src = '';
+    document.getElementById('imageAttachmentContainer').style.display = 'flex';
+    document.getElementById('imagePreviewCompact').style.display = 'none';
 }
 
 // Save settings
