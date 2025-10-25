@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Create account - Zypher AI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- Favicon served from top-level photos/ folder -->
+    <link rel="icon" href="{{ url_for('serve_photos', filename='favicon.ico') }}" type="image/x-icon">
+    <link rel="shortcut icon" href="{{ url_for('serve_photos', filename='favicon.ico') }}" type="image/x-icon">
+    <style>
+        /* Center the form both vertically and horizontally */
+        html, body {
+            height: 100%;
+            margin: 0;
+        }
+        main {
+            min-height: 100vh;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background: var(--bg-primary);
+        }
+        .auth-container {
+            max-width: 480px;
+            width: 100%;
+            margin: 0;
+            padding: 32px;
+            background: var(--bg-secondary);
+            border-radius: 16px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+        }
+        .auth-container h2 {
+            margin-bottom: 24px;
+            font-size: 24px;
+            text-align: center;
+            color: var(--text-primary);
+        }
+        .auth-field {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+        .auth-field:last-of-type {
+            margin-bottom: 24px;
+        }
+        .auth-field label {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+        .auth-field input {
+            padding: 12px 16px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-input);
+            color: var(--text-primary);
+            font-size: 15px;
+            transition: all 0.2s ease;
+        }
+        .auth-field input:focus {
+            outline: none;
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 2px rgba(16, 163, 127, 0.15);
+        }
+        .auth-field input::placeholder {
+            color: var(--text-secondary);
+            opacity: 0.7;
+        }
+        .actions-inline {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .primary-btn {
+            background: var(--accent-color);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            flex: 1;
+            min-width: 140px;
+            text-align: center;
+        }
+        .primary-btn:hover {
+            background: var(--accent-hover);
+            transform: translateY(-1px);
+        }
+        .link {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 12px;
+            font-size: 14px;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            flex: 1;
+            text-align: center;
+        }
+        .link:hover {
+            color: var(--text-primary);
+        }
+        .error {
+            color: var(--error-color);
+            margin-top: 16px;
+            font-size: 14px;
+            text-align: center;
+            padding: 12px;
+            background: rgba(239, 68, 68, 0.1);
+            border-radius: 8px;
+            display: none;
+        }
+        .error:not(:empty) {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <div class="auth-container">
+            <h2>Create an account</h2>
+            <div class="auth-field">
+                <label for="email">Email</label>
+                <input id="email" type="email" placeholder="you@example.com">
+            </div>
+            <div class="auth-field">
+                <label for="password">Password</label>
+                <input id="password" type="password" placeholder="At least 8 characters">
+            </div>
+            <div class="auth-field">
+                <label for="confirm">Confirm password</label>
+                <input id="confirm" type="password" placeholder="Repeat password">
+            </div>
+            <div class="actions-inline">
+                <button id="signupBtn" class="primary-btn">Create account</button>
+                <a href="/login" class="link">Sign in instead</a>
+            </div>
+            <div id="error" class="error" role="alert" aria-live="polite"></div>
+        </div>
+    </main>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+    <script>
+        async function init() {
+            try {
+                const resp = await fetch('/api/firebase-config');
+                const data = await resp.json();
+                if (!data.success) throw new Error('No firebase config');
+                firebase.initializeApp(data.config);
+
+                document.getElementById('signupBtn').addEventListener('click', async () => {
+                    const email = document.getElementById('email').value.trim();
+                    const password = document.getElementById('password').value;
+                    const confirm = document.getElementById('confirm').value;
+                    const errDiv = document.getElementById('error'); errDiv.textContent = '';
+                    if (password.length < 8) { errDiv.textContent = 'Password must be at least 8 characters'; return; }
+                    if (password !== confirm) { errDiv.textContent = 'Passwords do not match'; return; }
+                    try {
+                        const userCred = await firebase.auth().createUserWithEmailAndPassword(email, password);
+                        // Optionally send email verification
+                        try { await userCred.user.sendEmailVerification(); } catch(e){}
+                        const token = await userCred.user.getIdToken();
+                        localStorage.setItem('authToken', token);
+                        window.location.href = '/';
+                    } catch (e) {
+                        errDiv.textContent = e.message || 'Sign up failed';
+                    }
+                });
+            } catch (e) {
+                document.getElementById('error').textContent = 'Authentication not configured on server.';
+                console.warn(e);
+            }
+        }
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

@@ -18,12 +18,30 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import config
 from utils.model_manager import ModelManager
 from utils.chat_history import ChatHistoryManager
+from utils.firebase_auth import verify_firebase_token, initialize_firebase
+import models
 
 
 app = Flask(__name__, 
             static_folder='static',
             template_folder='templates')
 CORS(app)
+
+# Configure database
+app.config['SQLALCHEMY_DATABASE_URI'] = config.DATABASE_URL
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+models.db.init_app(app)
+
+# Initialize Firebase admin if configured
+initialize_firebase()
+
+# Create DB tables if they don't exist (simple auto-create for development)
+with app.app_context():
+    try:
+        models.db.create_all()
+    except Exception as e:
+        # ignore creation errors in constrained environments
+        print('Warning: could not create DB tables:', e)
 
 # Initialize managers
 model_manager = ModelManager()
@@ -36,7 +54,117 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/login')
+def login_page():
+    return render_template('login.html')
+
+
+@app.route('/signup')
+def signup_page():
+    return render_template('signup.html')
+
+
+@app.route('/photos/<path:filename>')
+def serve_photos(filename):
+    """Serve files from the top-level photos/ folder (allows using existing F:/.../photos/favicon.ico)."""
+    photos_dir = os.path.join(config.BASE_DIR, 'photos')
+    return send_from_directory(photos_dir, filename)
+
+
+@app.route('/api/firebase-config', methods=['GET'])
+def firebase_config():
+    """Return frontend Firebase client config from environment (non-secret)"""
+    try:
+        return jsonify({'success': True, 'config': config.FIREBASE_CLIENT_CONFIG})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# Ensure user table has fname/lname columns (SQLite-friendly)
+def ensure_user_columns():
+    try:
+        from sqlalchemy import text
+        with app.app_context():
+            conn = models.db.engine.connect()
+            result = conn.execute(text("PRAGMA table_info('users')"))
+            cols = [row['name'] if isinstance(row, dict) else row[1] for row in result]
+            # Add fname and lname if missing
+            if 'fname' not in cols:
+                try:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN fname TEXT"))
+                except Exception:
+                    pass
+            if 'lname' not in cols:
+                try:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN lname TEXT"))
+                except Exception:
+                    pass
+            # Add last_prompt_reset if missing (store as TEXT for broad DB compatibility)
+            if 'last_prompt_reset' not in cols:
+                try:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN last_prompt_reset TEXT"))
+                except Exception:
+                    pass
+            conn.close()
+    except Exception:
+        pass
+
+
+# Profile endpoints for getting/updating user's display name
+@app.route('/api/user/profile', methods=['GET'])
+@verify_firebase_token
+def get_user_profile():
+    try:
+        firebase_user = getattr(request, 'firebase_user', None)
+        if not firebase_user:
+            return jsonify({'success': False, 'error': 'Authentication required'}), 401
+        uid = firebase_user.get('uid')
+        with app.app_context():
+            user = models.User.query.filter_by(firebase_uid=uid).first()
+            if not user:
+                return jsonify({'success': True, 'profile': {'fname': None, 'lname': None, 'email': firebase_user.get('email'), 'is_pro': False, 'prompt_count': 0}})
+            return jsonify({'success': True, 'profile': {'fname': user.fname, 'lname': user.lname, 'email': user.email, 'is_pro': bool(user.is_pro), 'prompt_count': int(user.prompt_count)}})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/user/profile', methods=['POST'])
+@verify_firebase_token
+def update_user_profile():
+    try:
+        data = request.get_json() or {}
+        fname = data.get('fname')
+        lname = data.get('lname')
+        firebase_user = getattr(request, 'firebase_user', None)
+        if not firebase_user:
+            return jsonify({'success': False, 'error': 'Authentication required'}), 401
+        uid = firebase_user.get('uid')
+        with app.app_context():
+            user = models.User.query.filter_by(firebase_uid=uid).first()
+            if not user:
+                user = models.User(firebase_uid=uid, email=firebase_user.get('email') or f'user_{uid}@unknown')
+                models.db.session.add(user)
+            user.fname = fname
+            user.lname = lname
+            models.db.session.commit()
+            return jsonify({'success': True, 'profile': {'fname': user.fname, 'lname': user.lname, 'email': user.email}})
+    except Exception as e:
+        models.db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/upgrade')
+def upgrade_page():
+    """Render a simple upgrade page describing Free vs Pro plans."""
+    return render_template('upgrade.html')
+
+
+# ensure columns are present at import time (safe no-op on most DBs)
+ensure_user_columns()
+
+
 @app.route('/api/generate', methods=['POST'])
+@verify_firebase_token
 def generate_logo():
     """
     Generate logo from prompt with optional reference image
@@ -95,6 +223,53 @@ def generate_logo():
                 'success': False,
                 'error': 'Prompt is required'
             }), 400
+
+        # Associate request with authenticated Firebase user
+        firebase_user = getattr(request, 'firebase_user', None)
+        if firebase_user is None:
+            return jsonify({'success': False, 'error': 'Authentication required'}), 401
+        uid = firebase_user.get('uid')
+        email = firebase_user.get('email')
+
+        # Get or create local User record
+        with app.app_context():
+            user = models.User.query.filter_by(firebase_uid=uid).first()
+            if not user:
+                user = models.User(firebase_uid=uid, email=email or f'user_{uid}@unknown')
+                models.db.session.add(user)
+                models.db.session.commit()
+
+            # Reset prompt_count if it's been more than 24 hours since last reset
+            try:
+                now = datetime.utcnow()
+                needs_reset = False
+                last = user.last_prompt_reset
+                if not last:
+                    needs_reset = True
+                else:
+                    try:
+                        # handle string stored in TEXT column or a datetime object
+                        if isinstance(last, str):
+                            last_dt = datetime.fromisoformat(last)
+                        else:
+                            last_dt = last
+                        if (now - last_dt).total_seconds() >= 24 * 3600:
+                            needs_reset = True
+                    except Exception:
+                        # if parse fails, reset to be safe
+                        needs_reset = True
+
+                if needs_reset:
+                    user.prompt_count = 0
+                    user.last_prompt_reset = now
+                    models.db.session.commit()
+            except Exception:
+                # don't block request on reset failures
+                pass
+
+            # Enforce free-user prompt limit (example: 5 prompts). is_admin removed — pro is the only unlimited plan.
+            if not user.is_pro and (user.prompt_count or 0) >= 5:
+                return jsonify({'success': False, 'error': 'Free user limit reached. Upgrade to Pro.'}), 403
         
         # Generate image
         image = model_manager.generate_image(
@@ -120,8 +295,23 @@ def generate_logo():
         image.save(buffered, format=config.IMAGE_FORMAT)
         img_str = base64.b64encode(buffered.getvalue()).decode()
         
-        # Add to chat history
-        chat_history.add_entry(prompt, image_path, use_lora)
+        # Add to chat history (legacy JSON manager)
+        try:
+            chat_history.add_entry(prompt, image_path, use_lora)
+        except Exception:
+            pass
+
+        # Also persist per-user entry in the SQL database
+        try:
+            with app.app_context():
+                entry = models.ChatHistory(user_id=user.id, prompt=prompt, image_path=image_path)
+                models.db.session.add(entry)
+                # increment prompt count for user
+                user.prompt_count = (user.prompt_count or 0) + 1
+                models.db.session.commit()
+        except Exception:
+            # don't fail the whole request if DB write fails
+            models.db.session.rollback()
         
         # Build model description
         model_parts = []

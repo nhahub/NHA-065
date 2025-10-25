@@ -24,3 +24,7 @@ huggingface-hub>=0.19.0
 
 # Optional: For better performance
 # xformers>=0.0.22  # Uncomment for faster attention (requires compatible GPU)
+
+# authentication and database
+firebase_admin
+flask_sqlalchemy

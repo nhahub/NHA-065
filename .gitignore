@@ -9,6 +9,7 @@ __pycache__/
 .env.*.local
 
 # Virtual Environment
+.venv/
 venv/
 env/
 ENV/
@@ -39,3 +40,7 @@ Thumbs.db
 
 # Gradio cache
 gradio_cached_examples/
+
+.hintrc
+
+zypher-eb28f-firebase-adminsdk-fbsvc-4bcfb0a550.json

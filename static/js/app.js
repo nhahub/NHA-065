@@ -13,9 +13,20 @@ let currentSettings = {
 
 let conversationHistory = [];
 
+// Return Authorization headers if an auth token is available
+function getAuthHeaders() {
+    const token = localStorage.getItem('authToken');
+    if (token) {
+        return { 'Authorization': 'Bearer ' + token };
+    }
+    return {};
+}
+
 // Initialize
+let userProfile = null;
 document.addEventListener('DOMContentLoaded', () => {
     loadHistory();
+    loadUserProfile();
     focusInput();
 });
 
@@ -96,10 +107,12 @@ async function sendMessage() {
         }
         
         // Send request
-        const response = await fetch('/api/generate', {
-            method: 'POST',
-            body: formData
-        });
+                const authHeaders = getAuthHeaders();
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: authHeaders,
+                    body: formData
+                });
         
         const data = await response.json();
         
@@ -253,14 +266,30 @@ function toggleSettings() {
     modal.classList.toggle('active');
     
     // Load current settings
-    document.getElementById('useLoraToggle').checked = currentSettings.use_lora;
-    document.getElementById('stepsSlider').value = currentSettings.num_steps;
-    document.getElementById('widthSlider').value = currentSettings.width;
-    document.getElementById('heightSlider').value = currentSettings.height;
-    
+    const useLoraToggle = document.getElementById('useLoraToggle');
+    const stepsSlider = document.getElementById('stepsSlider');
+    const widthSlider = document.getElementById('widthSlider');
+    const heightSlider = document.getElementById('heightSlider');
+
+    if (useLoraToggle) useLoraToggle.checked = currentSettings.use_lora;
+    if (stepsSlider) stepsSlider.value = currentSettings.num_steps;
+    if (widthSlider) widthSlider.value = currentSettings.width;
+    if (heightSlider) heightSlider.value = currentSettings.height;
+
     updateStepsValue(currentSettings.num_steps);
     updateWidthValue(currentSettings.width);
     updateHeightValue(currentSettings.height);
+
+    // Populate profile fields if available
+    const fnameEl = document.getElementById('fnameInput');
+    const lnameEl = document.getElementById('lnameInput');
+    if (userProfile) {
+        if (fnameEl) fnameEl.value = userProfile.fname || '';
+        if (lnameEl) lnameEl.value = userProfile.lname || '';
+    } else {
+        if (fnameEl) fnameEl.value = '';
+        if (lnameEl) lnameEl.value = '';
+    }
 }
 
 // Update setting values
@@ -339,7 +368,7 @@ async function loadModelStatus() {
     statusDiv.innerHTML = '<p>Loading...</p>';
     
     try {
-        const response = await fetch('/api/model/status');
+    const response = await fetch('/api/model/status', { headers: getAuthHeaders() });
         const data = await response.json();
         
         if (data.success) {
@@ -365,7 +394,7 @@ Status: ${model.base_model_loaded ? '🟢 Ready' : '🔴 Not ready'}
 // Load history
 async function loadHistory() {
     try {
-        const response = await fetch('/api/history');
+    const response = await fetch('/api/history', { headers: getAuthHeaders() });
         const data = await response.json();
         
         if (data.success && data.history) {
@@ -374,6 +403,74 @@ async function loadHistory() {
         }
     } catch (error) {
         console.error('Failed to load history:', error);
+    }
+}
+
+// Load current user's profile (fname/lname)
+async function loadUserProfile() {
+    try {
+        const resp = await fetch('/api/user/profile', { headers: getAuthHeaders() });
+        const data = await resp.json();
+        if (data.success && data.profile) {
+            userProfile = data.profile;
+            const fname = userProfile.fname || '';
+            const lname = userProfile.lname || '';
+            const initials = ((fname[0] || '') + (lname[0] || '')).toUpperCase() || 'AI';
+            const defaultName = userProfile.email ? userProfile.email.split('@')[0] : 'User';
+            const avatarEl = document.getElementById('userAvatar');
+            const nameEl = document.getElementById('userFullName');
+            if (avatarEl) avatarEl.textContent = initials;
+            if (nameEl) nameEl.textContent = (fname || lname) ? `${fname} ${lname}`.trim() : defaultName;
+            // Show plan info: free users limited to 5 prompts
+            try {
+                const planEl = document.getElementById('planInfo');
+                if (planEl) {
+                    const isPro = !!userProfile.is_pro;
+                    const used = Number(userProfile.prompt_count || 0);
+                    if (isPro) {
+                        planEl.textContent = 'Pro — Unlimited prompts';
+                    } else {
+                        planEl.innerHTML = `Free — max prompts: 5 (used ${used}/5) <a href="/upgrade" style="margin-left:8px; color: var(--accent-color); font-weight:600;">Upgrade</a>`;
+                    }
+                }
+            } catch (e) {
+                console.warn('Could not render plan info', e);
+            }
+        }
+    } catch (err) {
+        console.warn('Could not load user profile', err);
+    }
+}
+
+// Save current user's profile (fname/lname)
+async function saveUserProfile() {
+    const fname = (document.getElementById('fnameInput') || {}).value || '';
+    const lname = (document.getElementById('lnameInput') || {}).value || '';
+    try {
+        const resp = await fetch('/api/user/profile', {
+            method: 'POST',
+            headers: Object.assign({'Content-Type': 'application/json'}, getAuthHeaders()),
+            body: JSON.stringify({ fname: fname || null, lname: lname || null })
+        });
+        const data = await resp.json();
+        if (data.success && data.profile) {
+            userProfile = data.profile;
+            // Update UI
+            const avatarEl = document.getElementById('userAvatar');
+            const nameEl = document.getElementById('userFullName');
+            const initials = ((userProfile.fname || '')[0] || '') + ((userProfile.lname || '')[0] || '');
+            if (avatarEl) avatarEl.textContent = initials.toUpperCase() || 'AI';
+            const defaultName = userProfile.email ? userProfile.email.split('@')[0] : 'User';
+            if (nameEl) nameEl.textContent = (userProfile.fname || userProfile.lname) ? `${userProfile.fname || ''} ${userProfile.lname || ''}`.trim() : defaultName;
+            // Close modal
+            toggleSettings();
+            alert('Profile saved');
+        } else {
+            alert('Could not save profile: ' + (data.error || 'Unknown error'));
+        }
+    } catch (err) {
+        console.error('Failed to save profile', err);
+        alert('Failed to save profile');
     }
 }
 
