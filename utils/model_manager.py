@@ -19,9 +19,22 @@ class ModelManager:
         self.pipeline = None
         self.device = config.GPU_DEVICE if config.USE_GPU and torch.cuda.is_available() else "cpu"
         self.lora_loaded = False
+        self.current_lora = None  # Track which LoRA is currently loaded
         self.base_model_loaded = False
         self.ip_adapter_loaded = False
         self.hf_token = os.getenv("HUGGINGFACE_TOKEN")
+    
+    def get_available_loras(self):
+        """Get list of available LoRA files in the lora directory"""
+        lora_files = []
+        try:
+            if os.path.exists(config.LORA_MODEL_PATH):
+                for file in os.listdir(config.LORA_MODEL_PATH):
+                    if file.endswith('.safetensors'):
+                        lora_files.append(file)
+        except Exception as e:
+            print(f"Error listing LoRA files: {e}")
+        return sorted(lora_files)
         
     def load_base_model(self):
         """Load the base Flux Schnell model"""
@@ -64,12 +77,21 @@ class ModelManager:
                 print("   3. Accept the model's license at: https://huggingface.co/black-forest-labs/FLUX.1-schnell")
             raise
     
-    def load_lora(self):
-        """Load LoRA weights on top of the base model"""
+    def load_lora(self, lora_filename=None):
+        """
+        Load LoRA weights on top of the base model
+        
+        Args:
+            lora_filename (str): Specific LoRA file to load. If None, uses config default.
+        """
         if not self.base_model_loaded:
             self.load_base_model()
         
-        lora_path = os.path.join(config.LORA_MODEL_PATH, config.LORA_WEIGHTS_FILE)
+        # Use provided filename or default from config
+        if lora_filename is None:
+            lora_filename = config.LORA_WEIGHTS_FILE
+        
+        lora_path = os.path.join(config.LORA_MODEL_PATH, lora_filename)
         
         if not os.path.exists(lora_path):
             raise FileNotFoundError(
@@ -78,26 +100,31 @@ class ModelManager:
             )
         
         try:
-            print("Loading LoRA weights...")
             # Unload any existing LoRA first
             if self.lora_loaded:
+                print(f"Unloading previous LoRA: {self.current_lora}")
                 self.pipeline.unload_lora_weights()
             
+            print(f"Loading LoRA weights: {lora_filename}...")
             # Load new LoRA weights
-            self.pipeline.load_lora_weights(config.LORA_MODEL_PATH)
+            self.pipeline.load_lora_weights(lora_path)
             self.lora_loaded = True
-            print(f"✓ LoRA weights loaded successfully (scale: {config.LORA_SCALE})")
+            self.current_lora = lora_filename
+            print(f"✓ LoRA weights loaded successfully: {lora_filename} (scale: {config.LORA_SCALE})")
         except Exception as e:
             print(f"Error loading LoRA: {e}")
+            self.lora_loaded = False
+            self.current_lora = None
             raise
     
     def unload_lora(self):
         """Unload LoRA weights to use base model only"""
         if self.lora_loaded and self.pipeline is not None:
             try:
-                print("Unloading LoRA weights...")
+                print(f"Unloading LoRA weights: {self.current_lora}...")
                 self.pipeline.unload_lora_weights()
                 self.lora_loaded = False
+                self.current_lora = None
                 print("✓ LoRA weights unloaded, using base model")
             except Exception as e:
                 print(f"Error unloading LoRA: {e}")
@@ -127,13 +154,14 @@ class ModelManager:
             print("Continuing without IP-Adapter support...")
             self.ip_adapter_loaded = False
     
-    def generate_image(self, prompt, use_lora=False, reference_image=None, ip_adapter_scale=0.5, **kwargs):
+    def generate_image(self, prompt, use_lora=False, lora_filename=None, reference_image=None, ip_adapter_scale=0.5, **kwargs):
         """
         Generate an image from a text prompt, optionally with a reference image
         
         Args:
             prompt (str): Text description of the logo to generate
             use_lora (bool): Whether to use LoRA weights
+            lora_filename (str): Specific LoRA file to use (if use_lora=True)
             reference_image (PIL.Image or str): Reference image for IP-Adapter
             ip_adapter_scale (float): Strength of IP-Adapter influence (0.0-1.0)
             **kwargs: Additional generation parameters
@@ -142,9 +170,11 @@ class ModelManager:
             PIL.Image: Generated image
         """
         # Ensure correct model is loaded
-        if use_lora and not self.lora_loaded:
-            self.load_lora()
-        elif not use_lora and self.lora_loaded:
+        if use_lora:
+            # Check if we need to load a different LoRA or load for first time
+            if not self.lora_loaded or (lora_filename and self.current_lora != lora_filename):
+                self.load_lora(lora_filename)
+        elif self.lora_loaded:
             self.unload_lora()
         elif not self.base_model_loaded:
             self.load_base_model()
@@ -210,6 +240,8 @@ class ModelManager:
         return {
             "base_model_loaded": self.base_model_loaded,
             "lora_loaded": self.lora_loaded,
+            "current_lora": self.current_lora,
+            "available_loras": self.get_available_loras(),
             "ip_adapter_loaded": self.ip_adapter_loaded,
             "device": self.device,
             "model_id": config.BASE_MODEL_ID if self.base_model_loaded else None

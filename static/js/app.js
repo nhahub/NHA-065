@@ -3,6 +3,7 @@
 // State
 let currentSettings = {
     use_lora: false,
+    lora_filename: null,
     num_steps: 4,
     width: 1024,
     height: 1024,
@@ -13,6 +14,7 @@ let currentSettings = {
 
 let conversationHistory = [];
 let mistralConversationHistory = [];
+let availableLoras = [];
 
 // Return Authorization headers if an auth token is available
 function getAuthHeaders() {
@@ -28,6 +30,7 @@ let userProfile = null;
 document.addEventListener('DOMContentLoaded', () => {
     loadHistory();
     loadUserProfile();
+    loadAvailableLoras();
     focusInput();
 });
 
@@ -505,11 +508,18 @@ function toggleSettings() {
     
     // Load current settings
     const useLoraToggle = document.getElementById('useLoraToggle');
+    const loraSelect = document.getElementById('loraSelect');
     const stepsSlider = document.getElementById('stepsSlider');
     const widthSlider = document.getElementById('widthSlider');
     const heightSlider = document.getElementById('heightSlider');
 
-    if (useLoraToggle) useLoraToggle.checked = currentSettings.use_lora;
+    if (useLoraToggle) {
+        useLoraToggle.checked = currentSettings.use_lora;
+        toggleLoraSettings(); // Show/hide LoRA selection based on checkbox
+    }
+    if (loraSelect && currentSettings.lora_filename) {
+        loraSelect.value = currentSettings.lora_filename;
+    }
     if (stepsSlider) stepsSlider.value = currentSettings.num_steps;
     if (widthSlider) widthSlider.value = currentSettings.width;
     if (heightSlider) heightSlider.value = currentSettings.height;
@@ -527,6 +537,11 @@ function toggleSettings() {
     } else {
         if (fnameEl) fnameEl.value = '';
         if (lnameEl) lnameEl.value = '';
+    }
+    
+    // Reload LoRA list to get latest
+    if (modal.classList.contains('active')) {
+        loadAvailableLoras();
     }
 }
 
@@ -596,6 +611,8 @@ function removeReferenceImage(event) {
 document.addEventListener('change', (e) => {
     if (e.target.id === 'useLoraToggle') {
         currentSettings.use_lora = e.target.checked;
+    } else if (e.target.id === 'loraSelect') {
+        currentSettings.lora_filename = e.target.value || null;
     }
 });
 
@@ -641,6 +658,65 @@ async function loadHistory() {
         }
     } catch (error) {
         console.error('Failed to load history:', error);
+    }
+}
+
+// Load available LoRA models
+async function loadAvailableLoras() {
+    try {
+        const resp = await fetch('/api/model/loras', { headers: getAuthHeaders() });
+        const data = await resp.json();
+        if (data.success) {
+            availableLoras = data.loras;
+            updateLoraSelect();
+        }
+    } catch (err) {
+        console.warn('Could not load LoRA models', err);
+    }
+}
+
+// Update LoRA select dropdown
+function updateLoraSelect() {
+    const loraSelect = document.getElementById('loraSelect');
+    const loraCount = document.getElementById('loraCount');
+    
+    if (!loraSelect) return;
+    
+    loraSelect.innerHTML = '';
+    
+    if (availableLoras.length === 0) {
+        loraSelect.innerHTML = '<option value="">No LoRA models found</option>';
+        if (loraCount) loraCount.textContent = '0 LoRA models available';
+    } else {
+        // Add default option
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        defaultOption.textContent = '-- Select a LoRA --';
+        loraSelect.appendChild(defaultOption);
+        
+        // Add LoRA options
+        availableLoras.forEach(lora => {
+            const option = document.createElement('option');
+            option.value = lora;
+            option.textContent = lora;
+            loraSelect.appendChild(option);
+        });
+        
+        if (loraCount) loraCount.textContent = `${availableLoras.length} LoRA model${availableLoras.length !== 1 ? 's' : ''} available`;
+    }
+}
+
+// Toggle LoRA settings visibility
+function toggleLoraSettings() {
+    const useLoraToggle = document.getElementById('useLoraToggle');
+    const loraSelectionGroup = document.getElementById('loraSelectionGroup');
+    
+    if (useLoraToggle && loraSelectionGroup) {
+        if (useLoraToggle.checked) {
+            loraSelectionGroup.style.display = 'block';
+        } else {
+            loraSelectionGroup.style.display = 'none';
+        }
     }
 }
 

@@ -324,6 +324,7 @@ def generate_from_chat():
             image = model_manager.generate_image(
                 prompt=image_prompt,
                 use_lora=False,
+                lora_filename=None,
                 num_inference_steps=4,
                 width=1024,
                 height=1024
@@ -423,6 +424,7 @@ def generate_logo():
             # Form data with file upload
             prompt = request.form.get('prompt', '').strip()
             use_lora = request.form.get('use_lora', 'false').lower() == 'true'
+            lora_filename = request.form.get('lora_filename', None)
             num_steps = int(request.form.get('num_steps', 4))
             width = int(request.form.get('width', 1024))
             height = int(request.form.get('height', 1024))
@@ -440,6 +442,7 @@ def generate_logo():
             data = request.json
             prompt = data.get('prompt', '').strip()
             use_lora = data.get('use_lora', False)
+            lora_filename = data.get('lora_filename', None)
             num_steps = data.get('num_steps', 4)
             width = data.get('width', 1024)
             height = data.get('height', 1024)
@@ -510,6 +513,7 @@ def generate_logo():
         image = model_manager.generate_image(
             prompt=prompt,
             use_lora=use_lora,
+            lora_filename=lora_filename,
             reference_image=reference_image if use_ip_adapter else None,
             ip_adapter_scale=ip_adapter_scale if use_ip_adapter else 0.5,
             num_inference_steps=num_steps,
@@ -551,7 +555,8 @@ def generate_logo():
         # Build model description
         model_parts = []
         if use_lora:
-            model_parts.append("LoRA Fine-tuned")
+            lora_name = lora_filename or "Custom LoRA"
+            model_parts.append(f"LoRA: {lora_name}")
         else:
             model_parts.append("Base Flux Schnell")
         if use_ip_adapter:
@@ -566,6 +571,7 @@ def generate_logo():
             'path': image_path,
             'metadata': {
                 'model': model_desc,
+                'lora_used': lora_filename if use_lora else None,
                 'steps': num_steps,
                 'dimensions': f"{width}×{height}",
                 'ip_adapter': use_ip_adapter,
@@ -621,6 +627,25 @@ def model_status():
         return jsonify({
             'success': True,
             'model': info
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/model/loras', methods=['GET'])
+def list_loras():
+    """Get list of available LoRA models"""
+    try:
+        loras = model_manager.get_available_loras()
+        current_lora = model_manager.current_lora
+        return jsonify({
+            'success': True,
+            'loras': loras,
+            'current_lora': current_lora,
+            'count': len(loras)
         })
     except Exception as e:
         return jsonify({

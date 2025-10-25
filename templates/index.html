@@ -253,11 +253,22 @@
                     <h3 class="settings-section-title">Generation Settings</h3>
                     <div class="setting-group">
                         <label class="setting-label checkbox-label">
-                            <input type="checkbox" id="useLoraToggle" class="settings-checkbox">
+                            <input type="checkbox" id="useLoraToggle" class="settings-checkbox" onchange="toggleLoraSettings()">
                             <span class="checkmark"></span>
                             Use LoRA Fine-tuned Model
                         </label>
                         <p class="setting-description">Enable your custom trained weights for specialized styles</p>
+                    </div>
+
+                    <!-- LoRA Selection (shown when LoRA is enabled) -->
+                    <div class="setting-group" id="loraSelectionGroup" style="display: none;">
+                        <label for="loraSelect" class="setting-label">
+                            Select LoRA Model:
+                        </label>
+                        <select id="loraSelect" class="settings-select">
+                            <option value="">Loading LoRAs...</option>
+                        </select>
+                        <p class="setting-description" id="loraCount">0 LoRA models available</p>
                     </div>
 
                     <div class="setting-group slider-group">
