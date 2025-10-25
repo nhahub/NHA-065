@@ -229,7 +229,12 @@ function addMessage(role, text, imageUrl = null, metadata = null, filename = nul
     `;
     
     if (text) {
-        messageHTML += `<div class="message-text">${escapeHtml(text)}</div>`;
+        // Render markdown for assistant messages, plain text for user messages
+        if (role === 'assistant' && typeof marked !== 'undefined') {
+            messageHTML += `<div class="message-text markdown-content">${marked.parse(text)}</div>`;
+        } else {
+            messageHTML += `<div class="message-text">${escapeHtml(text)}</div>`;
+        }
     }
     
     if (imageUrl) {
@@ -385,7 +390,7 @@ function addStreamingMessage(role, text = '') {
     messageDiv.innerHTML = `
         <div class="message-avatar">${avatar}</div>
         <div class="message-content">
-            <div class="message-text" id="streamingText">${escapeHtml(text)}</div>
+            <div class="message-text markdown-content" id="streamingText">${text}</div>
         </div>
     `;
     
@@ -399,7 +404,12 @@ function addStreamingMessage(role, text = '') {
 function updateStreamingMessage(text) {
     const streamingText = document.getElementById('streamingText');
     if (streamingText) {
-        streamingText.innerHTML = escapeHtml(text);
+        // Render as markdown for assistant messages
+        if (typeof marked !== 'undefined') {
+            streamingText.innerHTML = marked.parse(text);
+        } else {
+            streamingText.innerHTML = escapeHtml(text);
+        }
         scrollToBottom();
     }
 }
@@ -423,10 +433,18 @@ async function streamText(text, messageDiv) {
     
     // Split into words for more natural streaming
     const words = text.split(' ');
-    textElement.textContent = '';
+    let currentText = '';
     
     for (let i = 0; i < words.length; i++) {
-        textElement.textContent += (i > 0 ? ' ' : '') + words[i];
+        currentText += (i > 0 ? ' ' : '') + words[i];
+        
+        // Render as markdown
+        if (typeof marked !== 'undefined') {
+            textElement.innerHTML = marked.parse(currentText);
+        } else {
+            textElement.textContent = currentText;
+        }
+        
         scrollToBottom();
         // Adjust delay for speed (lower = faster)
         await new Promise(resolve => setTimeout(resolve, 30));

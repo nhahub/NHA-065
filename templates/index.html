@@ -11,6 +11,8 @@
     <!-- Favicon served from top-level photos/ folder -->
     <link rel="icon" href="{{ url_for('serve_photos', filename='favicon.ico') }}" type="image/x-icon">
     <link rel="shortcut icon" href="{{ url_for('serve_photos', filename='favicon.ico') }}" type="image/x-icon">
+    <!-- Marked.js for Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.0/marked.min.js"></script>
 </head>
 <body>
     <script>
