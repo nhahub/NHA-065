@@ -71,7 +71,10 @@ GPU_DEVICE = "cuda:0"  # Change if you have multiple GPUs
 DATABASE_URL = os.getenv('DATABASE_URL', f"sqlite:///{os.path.join(BASE_DIR, 'data.db')}")
 
 # Firebase service account JSON path (server-side)
-FIREBASE_SERVICE_ACCOUNT = os.getenv('FIREBASE_SERVICE_ACCOUNT', '')
+FIREBASE_SERVICE_ACCOUNT = os.getenv(
+    'FIREBASE_SERVICE_ACCOUNT', 
+    os.path.join(BASE_DIR, 'utils', 'zypher-eb28f-firebase-adminsdk-fbsvc-4bcfb0a550.json')
+)
 
 # Firebase client config (for frontend - provide via env)
 FIREBASE_CLIENT_CONFIG = {
