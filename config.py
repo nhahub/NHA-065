@@ -2,6 +2,10 @@
 Configuration file for Zypher AI Logo Generator
 """
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env (if present)
+load_dotenv()
 
 # Project Settings
 PROJECT_NAME = "Zypher AI Logo Generator"
@@ -44,6 +48,16 @@ SERVER_NAME = "0.0.0.0"  # Use "127.0.0.1" for localhost only
 MAX_HISTORY_ITEMS = 50
 HISTORY_FILE = os.path.join(CHAT_LOGS_DIR, "chat_history.json")
 
+# Firebase Configuration
+FIREBASE_CLIENT_CONFIG = {
+    "apiKey": os.getenv("FIREBASE_API_KEY", ""),
+    "authDomain": os.getenv("FIREBASE_AUTH_DOMAIN", ""),
+    "projectId": os.getenv("FIREBASE_PROJECT_ID", ""),
+    "storageBucket": os.getenv("FIREBASE_STORAGE_BUCKET", ""),
+    "messagingSenderId": os.getenv("FIREBASE_MESSAGING_SENDER_ID", ""),
+    "appId": os.getenv("FIREBASE_APP_ID", ""),
+}
+
 # Image Save Settings
 SAVE_GENERATED_IMAGES = True
 IMAGE_FORMAT = "PNG"
@@ -51,3 +65,20 @@ IMAGE_FORMAT = "PNG"
 # GPU/CPU Settings
 USE_GPU = True  # Set to False to use CPU (slower)
 GPU_DEVICE = "cuda:0"  # Change if you have multiple GPUs
+
+# Database and Firebase settings
+# DATABASE_URL can be set to e.g. 'sqlite:///data.db' or a postgres URL
+DATABASE_URL = os.getenv('DATABASE_URL', f"sqlite:///{os.path.join(BASE_DIR, 'data.db')}")
+
+# Firebase service account JSON path (server-side)
+FIREBASE_SERVICE_ACCOUNT = os.getenv('FIREBASE_SERVICE_ACCOUNT', '')
+
+# Firebase client config (for frontend - provide via env)
+FIREBASE_CLIENT_CONFIG = {
+    'apiKey': os.getenv('FIREBASE_API_KEY', ''),
+    'authDomain': os.getenv('FIREBASE_AUTH_DOMAIN', ''),
+    'projectId': os.getenv('FIREBASE_PROJECT_ID', ''),
+    'storageBucket': os.getenv('FIREBASE_STORAGE_BUCKET', ''),
+    'messagingSenderId': os.getenv('FIREBASE_MESSAGING_SENDER_ID', ''),
+    'appId': os.getenv('FIREBASE_APP_ID', ''),
+}

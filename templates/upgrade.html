@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Upgrade - Zypher AI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- Favicon served from top-level photos/ folder -->
+    <link rel="icon" href="{{ url_for('serve_photos', filename='favicon.ico') }}" type="image/x-icon">
+    <link rel="shortcut icon" href="{{ url_for('serve_photos', filename='favicon.ico') }}" type="image/x-icon">
+    <style>
+    main{
+    width: 100%;
+    }
+    </style>
+</head>
+<body>
+    <main style="display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;background:var(--bg-primary);">
+        <div class="upgrade-panel" style="max-width:980px;width:100%;background:var(--bg-secondary);padding:28px;border-radius:12px;border:1px solid var(--border-color);">
+            <section class="upgrade-hero">
+                <h1>Upgrade to Pro</h1>
+                <p>Unlock unlimited prompts, priority generation, higher rate limits, and early access to new models.</p>
+            </section>
+
+            <section class="plan-grid" aria-label="Plans">
+                <article class="plan-card" id="free">
+                    <h3>Free</h3>
+                    <div class="price">Free</div>
+                    <ul>
+                        <li>Max prompts: 5</li>
+                        <li>Basic generation features</li>
+                        <li>Community support</li>
+                    </ul>
+                    <div style="margin-top:auto;">
+                        <a class="btn-ghost" href="/" title="Continue on Free">Continue (Free)</a>
+                    </div>
+                </article>
+
+                <article class="plan-card pro" id="pro">
+                    <h3>Pro</h3>
+                    <div class="price">Unlimited</div>
+                    <ul>
+                        <li>Unlimited prompts</li>
+                        <li>Priority queue & higher rate limits</li>
+                        <li>Early access to new models and features</li>
+                    </ul>
+                    <div style="margin-top:auto;">
+                        <a class="btn-primary" href="#" title="Contact to upgrade">Contact to upgrade</a>
+                    </div>
+                </article>
+            </section>
+
+            <section style="margin-top:18px;color:var(--text-secondary);">
+                <p>If you'd like to enable Pro for your account in this demo, contact the site admin or implement a payment flow (Stripe, Paddle, etc.).</p>
+            </section>
+        </div>
+    </main>
+</body>
+</html>

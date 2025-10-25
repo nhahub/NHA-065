@@ -8,8 +8,21 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Favicon served from top-level photos/ folder -->
+    <link rel="icon" href="{{ url_for('serve_photos', filename='favicon.ico') }}" type="image/x-icon">
+    <link rel="shortcut icon" href="{{ url_for('serve_photos', filename='favicon.ico') }}" type="image/x-icon">
 </head>
 <body>
+    <script>
+        // If there's no token in localStorage, require login
+        document.addEventListener('DOMContentLoaded', () => {
+            const token = localStorage.getItem('authToken');
+            // allow the login and signup pages themselves
+            if (!token && window.location.pathname !== '/login' && window.location.pathname !== '/signup') {
+                window.location.href = '/login';
+            }
+        });
+    </script>
     <!-- Sidebar -->
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
@@ -37,8 +50,8 @@
 
         <div class="sidebar-footer">
             <div class="user-info">
-                <div class="user-avatar">AI</div>
-                <span>Flux Schnell</span>
+                <div id="userAvatar" class="user-avatar">AI</div>
+                <span id="userFullName">Flux Schnell</span>
             </div>
         </div>
     </aside>
@@ -59,6 +72,10 @@
                 <span class="logo-text">Zypher AI</span>
             </div>
             <div class="header-spacer"></div>
+            <button id="authBtn" class="settings-btn-header" onclick="handleAuth()">
+                <span id="authBtnText">Sign in</span>
+            </button>
+            <div id="planInfo" class="plan-info desktop-only" style="margin-left:12px; color:var(--text-secondary); font-size:13px;"></div>
             <button class="settings-btn-header" onclick="toggleSettings()">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="3"></circle>
@@ -203,44 +220,85 @@
                 </button>
             </div>
             <div class="modal-body">
-                <div class="setting-group">
-                    <label class="setting-label">
-                        <input type="checkbox" id="useLoraToggle">
-                        <span class="checkmark"></span>
-                        Use LoRA Fine-tuned Model
-                    </label>
-                    <p class="setting-description">Enable your custom trained weights for specialized styles</p>
+                <!-- Profile Settings Section -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">Profile Settings</h3>
+                    <div class="setting-group profile-settings">
+                        <div class="form-group">
+                            <label class="setting-label" for="fnameInput">First name</label>
+                            <input type="text" id="fnameInput" class="settings-input" placeholder="Enter your first name" />
+                        </div>
+
+                        <div class="form-group">
+                            <label class="setting-label" for="lnameInput">Last name</label>
+                            <input type="text" id="lnameInput" class="settings-input" placeholder="Enter your last name" />
+                        </div>
+
+                        <button class="primary-btn save-profile-btn" onclick="saveUserProfile()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                                <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                                <polyline points="7 3 7 8 15 8"></polyline>
+                            </svg>
+                            Save Profile
+                        </button>
+                    </div>
                 </div>
 
-                <div class="setting-group">
-                    <label for="stepsSlider">Inference Steps: <span id="stepsValue">4</span></label>
-                    <input type="range" id="stepsSlider" min="1" max="8" value="4" oninput="updateStepsValue(this.value)">
-                    <p class="setting-description">Flux Schnell is optimized for 1-4 steps (faster = less detailed)</p>
+                <!-- Generation Settings Section -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">Generation Settings</h3>
+                    <div class="setting-group">
+                        <label class="setting-label checkbox-label">
+                            <input type="checkbox" id="useLoraToggle" class="settings-checkbox">
+                            <span class="checkmark"></span>
+                            Use LoRA Fine-tuned Model
+                        </label>
+                        <p class="setting-description">Enable your custom trained weights for specialized styles</p>
+                    </div>
+
+                    <div class="setting-group slider-group">
+                        <label for="stepsSlider" class="setting-label">
+                            Inference Steps: <span id="stepsValue" class="slider-value">4</span>
+                        </label>
+                        <input type="range" id="stepsSlider" class="settings-slider" 
+                               min="1" max="8" value="4" oninput="updateStepsValue(this.value)">
+                        <p class="setting-description">Flux Schnell is optimized for 1-4 steps (faster = less detailed)</p>
+                    </div>
+
+                    <div class="setting-group slider-group">
+                        <label for="widthSlider" class="setting-label">
+                            Width: <span id="widthValue" class="slider-value">1024</span>px
+                        </label>
+                        <input type="range" id="widthSlider" class="settings-slider"
+                               min="512" max="1536" step="64" value="1024" oninput="updateWidthValue(this.value)">
+                    </div>
+
+                    <div class="setting-group slider-group">
+                        <label for="heightSlider" class="setting-label">
+                            Height: <span id="heightValue" class="slider-value">1024</span>px
+                        </label>
+                        <input type="range" id="heightSlider" class="settings-slider"
+                               min="512" max="1536" step="64" value="1024" oninput="updateHeightValue(this.value)">
+                    </div>
                 </div>
 
-                <div class="setting-group">
-                    <label for="widthSlider">Width: <span id="widthValue">1024</span>px</label>
-                    <input type="range" id="widthSlider" min="512" max="1536" step="64" value="1024" oninput="updateWidthValue(this.value)">
-                </div>
-
-                <div class="setting-group">
-                    <label for="heightSlider">Height: <span id="heightValue">1024</span>px</label>
-                    <input type="range" id="heightSlider" min="512" max="1536" step="64" value="1024" oninput="updateHeightValue(this.value)">
-                </div>
-
-                <div class="setting-group">
-                    <button class="secondary-btn" onclick="loadModelStatus()">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <line x1="12" y1="16" x2="12" y2="12"></line>
-                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                        </svg>
-                        Check Model Status
-                    </button>
-                </div>
-
-                <div id="modelStatus" class="model-status" style="display: none;">
-                    <!-- Model status will be displayed here -->
+                <!-- Model Status Section -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">Model Status</h3>
+                    <div class="setting-group">
+                        <button class="secondary-btn status-check-btn" onclick="loadModelStatus()">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="12" y1="16" x2="12" y2="12"></line>
+                                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                            </svg>
+                            Check Model Status
+                        </button>
+                        <div id="modelStatus" class="model-status">
+                            <!-- Model status will be displayed here -->
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -251,6 +309,62 @@
         <div class="loading-spinner"></div>
         <p>Generating your logo...</p>
     </div>
+
+    <!-- Firebase client SDK (compat) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+    <script>
+        // Initialize Firebase client using server-provided config
+        async function initFirebaseClient() {
+            try {
+                const resp = await fetch('/api/firebase-config');
+                const data = await resp.json();
+                if (data && data.success && data.config && data.config.apiKey) {
+                    firebase.initializeApp(data.config);
+
+                    firebase.auth().onAuthStateChanged((user) => {
+                        const authBtnText = document.getElementById('authBtnText');
+                        if (user) {
+                            user.getIdToken().then((t) => {
+                                localStorage.setItem('authToken', t);
+                            });
+                            if (authBtnText) authBtnText.textContent = 'Sign out';
+                        } else {
+                            localStorage.removeItem('authToken');
+                            if (authBtnText) authBtnText.textContent = 'Sign in';
+                        }
+                    });
+                }
+            } catch (e) {
+                console.warn('Could not initialize Firebase client:', e);
+            }
+        }
+
+        function handleAuth() {
+            if (!window.firebase || !firebase.auth) {
+                alert('Authentication is not configured on the server.');
+                return;
+            }
+            const user = firebase.auth().currentUser;
+            if (user) {
+                firebase.auth().signOut()
+                    .then(() => {
+                        // Ensure token cleared and reload the page
+                        localStorage.removeItem('authToken');
+                        window.location.reload();
+                    })
+                    .catch(err => {
+                        console.warn('Sign out failed', err);
+                        alert('Sign out failed: ' + (err.message || err));
+                    });
+            } else {
+                const provider = new firebase.auth.GoogleAuthProvider();
+                firebase.auth().signInWithPopup(provider).catch(err => alert(err.message));
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', initFirebaseClient);
+    </script>
 
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
