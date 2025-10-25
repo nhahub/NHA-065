@@ -119,22 +119,12 @@ async function sendMessage() {
                 content: prompt
             });
             
-            // If Mistral detected an image generation request and generated it
-            if (chatData.is_image_request && chatData.image) {
+            // If Mistral detected an image generation request and needs to generate
+            if (chatData.is_image_request && chatData.needs_generation) {
                 // Add assistant response message with streaming effect
                 const responseMsg = addStreamingMessage('assistant', '');
                 await streamText(chatData.response, responseMsg);
                 finalizeStreamingMessage();
-                
-                // Add the generated image
-                addMessage('assistant', '', chatData.image, chatData.metadata, chatData.filename);
-                
-                // Add to conversation history
-                conversationHistory.push({
-                    user: prompt,
-                    assistant: chatData.filename,
-                    timestamp: new Date().toISOString()
-                });
                 
                 // Add to Mistral conversation history
                 mistralConversationHistory.push({
@@ -142,7 +132,47 @@ async function sendMessage() {
                     content: chatData.response
                 });
                 
-                updateHistoryList();
+                // Show "Generating your logo..." message
+                const generatingIndicator = addGeneratingIndicator();
+                
+                // Now call the generate endpoint
+                try {
+                    const generateResponse = await fetch('/api/generate-from-chat', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...authHeaders
+                        },
+                        body: JSON.stringify({
+                            image_prompt: chatData.image_prompt
+                        })
+                    });
+                    
+                    const generateData = await generateResponse.json();
+                    
+                    // Remove generating indicator
+                    removeGeneratingIndicator();
+                    
+                    if (generateData.success) {
+                        // Add the generated image
+                        addMessage('assistant', '', generateData.image, generateData.metadata, generateData.filename);
+                        
+                        // Add to conversation history
+                        conversationHistory.push({
+                            user: prompt,
+                            assistant: generateData.filename,
+                            timestamp: new Date().toISOString()
+                        });
+                        
+                        updateHistoryList();
+                    } else {
+                        addErrorMessage(generateData.error || 'Failed to generate image.');
+                    }
+                } catch (genError) {
+                    console.error('Generation error:', genError);
+                    removeGeneratingIndicator();
+                    addErrorMessage('Failed to generate image. Please try again.');
+                }
             } 
             // If Mistral wants to generate but there was an error or limit reached
             else if (chatData.is_image_request) {
@@ -294,13 +324,16 @@ function addGeneratingIndicator() {
         <div class="message-content">
             <div class="generating-status">
                 <div class="generating-spinner"></div>
-                <span>Generating your logo...</span>
+                <span class="generating-text">Generating your logo<span class="dots"></span></span>
             </div>
         </div>
     `;
     
     messages.appendChild(generatingDiv);
     scrollToBottom();
+    
+    // Animate the dots
+    animateGeneratingDots();
     
     return generatingDiv;
 }
@@ -311,6 +344,25 @@ function removeGeneratingIndicator() {
     if (indicator) {
         indicator.remove();
     }
+    // Clear the animation interval
+    if (window.generatingDotsInterval) {
+        clearInterval(window.generatingDotsInterval);
+        window.generatingDotsInterval = null;
+    }
+}
+
+// Animate generating dots
+function animateGeneratingDots() {
+    let dotCount = 0;
+    window.generatingDotsInterval = setInterval(() => {
+        const dotsElement = document.querySelector('.generating-text .dots');
+        if (dotsElement) {
+            dotCount = (dotCount + 1) % 4;
+            dotsElement.textContent = '.'.repeat(dotCount);
+        } else {
+            clearInterval(window.generatingDotsInterval);
+        }
+    }, 500);
 }
 
 // Remove typing indicator

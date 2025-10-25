@@ -260,72 +260,129 @@ def chat_with_ai():
                         'needs_upgrade': True
                     })
             
-            # Generate the image automatically
+            # Generate a friendly, personalized acknowledgment using Mistral
+            friendly_response = mistral_chat.generate_acknowledgment(user_message)
+            
+            # Return immediate acknowledgment with generation status
+            # The frontend will display "Generating your logo..." message
+            return jsonify({
+                'success': True,
+                'response': friendly_response,
+                'is_image_request': True,
+                'image_prompt': image_prompt,
+                'status': 'generating',
+                'needs_generation': True
+            })
+        
+        # Normal chat response (no image generation)
+        return jsonify({
+            'success': True,
+            'response': response_text,
+            'is_image_request': False
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/generate-from-chat', methods=['POST'])
+@verify_firebase_token
+def generate_from_chat():
+    """
+    Generate image from chat-detected prompt
+    This is called after the user gets the "Generating..." message
+    """
+    try:
+        data = request.json
+        image_prompt = data.get('image_prompt', '').strip()
+        
+        if not image_prompt:
+            return jsonify({
+                'success': False,
+                'error': 'Image prompt is required'
+            }), 400
+        
+        # Get authenticated user
+        firebase_user = getattr(request, 'firebase_user', None)
+        if not firebase_user:
+            return jsonify({'success': False, 'error': 'Authentication required'}), 401
+        
+        uid = firebase_user.get('uid')
+        
+        # Get user record
+        with app.app_context():
+            user = models.User.query.filter_by(firebase_uid=uid).first()
+            if not user:
+                return jsonify({'success': False, 'error': 'User not found'}), 404
+        
+        # Generate the image
+        try:
+            # Use default settings for auto-generation
+            image = model_manager.generate_image(
+                prompt=image_prompt,
+                use_lora=False,
+                num_inference_steps=4,
+                width=1024,
+                height=1024
+            )
+            
+            # Save image
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"logo_{timestamp}.{config.IMAGE_FORMAT.lower()}"
+            image_path = os.path.join(config.OUTPUTS_DIR, filename)
+            
+            if config.SAVE_GENERATED_IMAGES:
+                image.save(image_path, format=config.IMAGE_FORMAT)
+            
+            # Convert to base64
+            buffered = io.BytesIO()
+            image.save(buffered, format=config.IMAGE_FORMAT)
+            img_str = base64.b64encode(buffered.getvalue()).decode()
+            
+            # Save to history
             try:
-                # Use default settings for auto-generation
-                image = model_manager.generate_image(
-                    prompt=image_prompt,
-                    use_lora=False,
-                    num_inference_steps=4,
-                    width=1024,
-                    height=1024
-                )
-                
-                # Save image
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"logo_{timestamp}.{config.IMAGE_FORMAT.lower()}"
-                image_path = os.path.join(config.OUTPUTS_DIR, filename)
-                
-                if config.SAVE_GENERATED_IMAGES:
-                    image.save(image_path, format=config.IMAGE_FORMAT)
-                
-                # Convert to base64
-                buffered = io.BytesIO()
-                image.save(buffered, format=config.IMAGE_FORMAT)
-                img_str = base64.b64encode(buffered.getvalue()).decode()
-                
-                # Save to history
-                try:
-                    chat_history.add_entry(image_prompt, image_path, False)
-                except Exception:
-                    pass
-                
-                # Save to database
-                try:
-                    with app.app_context():
-                        entry = models.ChatHistory(user_id=user.id, prompt=image_prompt, image_path=image_path)
-                        models.db.session.add(entry)
-                        user.prompt_count = (user.prompt_count or 0) + 1
-                        models.db.session.commit()
-                except Exception:
-                    models.db.session.rollback()
-                
-                # Return success with image
-                return jsonify({
-                    'success': True,
-                    'response': f"✨ I've created your image based on: {image_prompt}",
-                    'is_image_request': True,
-                    'image_prompt': image_prompt,
-                    'image': f"data:image/{config.IMAGE_FORMAT.lower()};base64,{img_str}",
-                    'filename': filename,
-                    'path': image_path,
-                    'metadata': {
-                        'model': 'Base Flux Schnell',
-                        'steps': 4,
-                        'dimensions': '1024×1024',
-                        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    }
-                })
-                
-            except Exception as e:
-                # If image generation fails, still return the chat response
-                return jsonify({
-                    'success': True,
-                    'response': f"I understand you want to create an image, but there was an error: {str(e)}",
-                    'is_image_request': True,
-                    'image_prompt': image_prompt,
-                    'error': str(e)
-                })
+                chat_history.add_entry(image_prompt, image_path, False)
+            except Exception:
+                pass
+            
+            # Save to database
+            try:
+                with app.app_context():
+                    entry = models.ChatHistory(user_id=user.id, prompt=image_prompt, image_path=image_path)
+                    models.db.session.add(entry)
+                    user.prompt_count = (user.prompt_count or 0) + 1
+                    models.db.session.commit()
+            except Exception:
+                models.db.session.rollback()
+            
+            # Return success with image
+            return jsonify({
+                'success': True,
+                'image': f"data:image/{config.IMAGE_FORMAT.lower()};base64,{img_str}",
+                'filename': filename,
+                'path': image_path,
+                'metadata': {
+                    'model': 'Base Flux Schnell',
+                    'steps': 4,
+                    'dimensions': '1024×1024',
+                    'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 500
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
         
         # Normal chat response (no image generation)
         return jsonify({

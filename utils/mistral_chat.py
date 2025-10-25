@@ -197,3 +197,61 @@ Enhanced prompt:"""
         except Exception as e:
             print(f"Error enhancing prompt: {e}")
             return basic_prompt
+    
+    def generate_acknowledgment(self, user_message: str) -> str:
+        """
+        Generate a friendly, personalized acknowledgment message for image generation requests
+        
+        Args:
+            user_message (str): The user's original request
+            
+        Returns:
+            str: A friendly acknowledgment message
+        """
+        if not self.api_key or self.api_key == 'your_mistral_api_key_here':
+            return "Sure! I'll be generating that for you. This will just take a moment! ✨"
+        
+        try:
+            acknowledgment_request = f"""Based on this user request, generate a short, friendly acknowledgment message (1-2 sentences max) that:
+1. Says you'll generate what they asked for
+2. Mentions specifically what they requested (e.g., "your logo for a juice company")
+3. Adds excitement with an emoji
+4. Keeps it brief and natural
+
+User request: "{user_message}"
+
+Reply with ONLY the acknowledgment message, nothing else:"""
+            
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}"
+            }
+            
+            payload = {
+                "model": self.model,
+                "messages": [
+                    {"role": "user", "content": acknowledgment_request}
+                ],
+                "temperature": 0.7,
+                "max_tokens": 100
+            }
+            
+            response = requests.post(
+                self.endpoint,
+                headers=headers,
+                json=payload,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                acknowledgment = result['choices'][0]['message']['content'].strip()
+                # Remove quotes if present
+                acknowledgment = acknowledgment.strip('"').strip("'")
+                return acknowledgment if acknowledgment else "Sure! I'll be generating that for you. This will just take a moment! ✨"
+            else:
+                return "Sure! I'll be generating that for you. This will just take a moment! ✨"
+                
+        except Exception as e:
+            print(f"Error generating acknowledgment: {e}")
+            return "Sure! I'll be generating that for you. This will just take a moment! ✨"
