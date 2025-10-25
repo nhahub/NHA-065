@@ -19,6 +19,7 @@ import config
 from utils.model_manager import ModelManager
 from utils.chat_history import ChatHistoryManager
 from utils.firebase_auth import verify_firebase_token, initialize_firebase
+from utils.mistral_chat import MistralChatManager
 import models
 
 
@@ -46,6 +47,7 @@ with app.app_context():
 # Initialize managers
 model_manager = ModelManager()
 chat_history = ChatHistoryManager()
+mistral_chat = MistralChatManager()
 
 
 @app.route('/')
@@ -161,6 +163,182 @@ def upgrade_page():
 
 # ensure columns are present at import time (safe no-op on most DBs)
 ensure_user_columns()
+
+
+@app.route('/api/chat', methods=['POST'])
+@verify_firebase_token
+def chat_with_ai():
+    """
+    Chat with Mistral AI - handles both normal conversation and image generation detection
+    Endpoint: POST /api/chat
+    Content-Type: application/json
+    
+    JSON Body: {
+        "message": "string",
+        "conversation_history": [{"role": "user/assistant", "content": "..."}] (optional)
+    }
+    
+    Returns: {
+        "success": true,
+        "response": "text response",
+        "is_image_request": bool,
+        "image_prompt": "enhanced prompt if image request" (optional),
+        "image": "base64 image" (optional, if auto-generated),
+        "metadata": {...} (optional, if image generated)
+    }
+    """
+    try:
+        data = request.json
+        user_message = data.get('message', '').strip()
+        conversation_history = data.get('conversation_history', [])
+        
+        if not user_message:
+            return jsonify({
+                'success': False,
+                'error': 'Message is required'
+            }), 400
+        
+        # Get authenticated user
+        firebase_user = getattr(request, 'firebase_user', None)
+        if not firebase_user:
+            return jsonify({'success': False, 'error': 'Authentication required'}), 401
+        
+        uid = firebase_user.get('uid')
+        email = firebase_user.get('email')
+        
+        # Get or create user record
+        with app.app_context():
+            user = models.User.query.filter_by(firebase_uid=uid).first()
+            if not user:
+                user = models.User(firebase_uid=uid, email=email or f'user_{uid}@unknown')
+                models.db.session.add(user)
+                models.db.session.commit()
+        
+        # Chat with Mistral AI
+        response_text, is_image_request, image_prompt = mistral_chat.chat(
+            user_message, 
+            conversation_history
+        )
+        
+        # If Mistral detected an image generation request
+        if is_image_request and image_prompt:
+            # Check user limits
+            with app.app_context():
+                user = models.User.query.filter_by(firebase_uid=uid).first()
+                
+                # Reset prompt count if needed
+                try:
+                    now = datetime.utcnow()
+                    needs_reset = False
+                    last = user.last_prompt_reset
+                    if not last:
+                        needs_reset = True
+                    else:
+                        try:
+                            if isinstance(last, str):
+                                last_dt = datetime.fromisoformat(last)
+                            else:
+                                last_dt = last
+                            if (now - last_dt).total_seconds() >= 24 * 3600:
+                                needs_reset = True
+                        except Exception:
+                            needs_reset = True
+                    
+                    if needs_reset:
+                        user.prompt_count = 0
+                        user.last_prompt_reset = now
+                        models.db.session.commit()
+                except Exception:
+                    pass
+                
+                # Check limits
+                if not user.is_pro and (user.prompt_count or 0) >= 5:
+                    return jsonify({
+                        'success': True,
+                        'response': "🎨 I'd love to help you create that! However, you've reached your free tier limit of 5 image generations. Upgrade to Pro for unlimited generations! [Upgrade](/upgrade)",
+                        'is_image_request': False,
+                        'needs_upgrade': True
+                    })
+            
+            # Generate the image automatically
+            try:
+                # Use default settings for auto-generation
+                image = model_manager.generate_image(
+                    prompt=image_prompt,
+                    use_lora=False,
+                    num_inference_steps=4,
+                    width=1024,
+                    height=1024
+                )
+                
+                # Save image
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"logo_{timestamp}.{config.IMAGE_FORMAT.lower()}"
+                image_path = os.path.join(config.OUTPUTS_DIR, filename)
+                
+                if config.SAVE_GENERATED_IMAGES:
+                    image.save(image_path, format=config.IMAGE_FORMAT)
+                
+                # Convert to base64
+                buffered = io.BytesIO()
+                image.save(buffered, format=config.IMAGE_FORMAT)
+                img_str = base64.b64encode(buffered.getvalue()).decode()
+                
+                # Save to history
+                try:
+                    chat_history.add_entry(image_prompt, image_path, False)
+                except Exception:
+                    pass
+                
+                # Save to database
+                try:
+                    with app.app_context():
+                        entry = models.ChatHistory(user_id=user.id, prompt=image_prompt, image_path=image_path)
+                        models.db.session.add(entry)
+                        user.prompt_count = (user.prompt_count or 0) + 1
+                        models.db.session.commit()
+                except Exception:
+                    models.db.session.rollback()
+                
+                # Return success with image
+                return jsonify({
+                    'success': True,
+                    'response': f"✨ I've created your image based on: {image_prompt}",
+                    'is_image_request': True,
+                    'image_prompt': image_prompt,
+                    'image': f"data:image/{config.IMAGE_FORMAT.lower()};base64,{img_str}",
+                    'filename': filename,
+                    'path': image_path,
+                    'metadata': {
+                        'model': 'Base Flux Schnell',
+                        'steps': 4,
+                        'dimensions': '1024×1024',
+                        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                })
+                
+            except Exception as e:
+                # If image generation fails, still return the chat response
+                return jsonify({
+                    'success': True,
+                    'response': f"I understand you want to create an image, but there was an error: {str(e)}",
+                    'is_image_request': True,
+                    'image_prompt': image_prompt,
+                    'error': str(e)
+                })
+        
+        # Normal chat response (no image generation)
+        return jsonify({
+            'success': True,
+            'response': response_text,
+            'is_image_request': False
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 
 @app.route('/api/generate', methods=['POST'])

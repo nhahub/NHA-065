@@ -11,8 +11,10 @@ An AI-powered logo generator built with **Flux Schnell** and **Gradio**. Zypher 
 
 ### 🎯 Core Features
 - 🚀 **Lightning Fast Generation**: Powered by Flux Schnell (optimized for 1-4 step generation)
+- 🤖 **AI-Powered Chat**: Integrated Mistral AI for natural conversations and intelligent prompt understanding
+- 🎨 **Smart Image Detection**: Automatically detects when you want to generate a logo and creates it
 - 🔮 **Custom LoRA Support**: Seamlessly switch between base model and your trained LoRA
-- 💬 **Intelligent Chat Interface**: Claude-inspired conversational UI
+- 💬 **Intelligent Chat Interface**: ChatGPT-style conversational UI with context awareness
 - 📜 **Persistent History**: Automatic saving and beautiful display of generation history
 - 🖼️ **Smart Image Management**: All generated logos saved automatically with metadata
 - ⚙️ **Customizable Settings**: Fine-tune steps, resolution, and LoRA strength
@@ -93,12 +95,21 @@ NHA-065/
    # https://huggingface.co/black-forest-labs/FLUX.1-schnell
    ```
    
-   Edit `.env` and replace `your_huggingface_token_here` with your actual token:
+   Edit `.env` and replace the placeholders with your actual tokens:
    ```
    HUGGINGFACE_TOKEN=hf_your_actual_token_here
+   MISTRAL_API_KEY=your_mistral_api_key_here
    ```
 
-5. **Set up your LoRA model** (optional)
+5. **Set up your Mistral AI API key** (required for chat features)
+   ```powershell
+   # Get your API key from: https://console.mistral.ai/api-keys/
+   # Add it to your .env file
+   ```
+   
+   The Mistral API enables intelligent conversations and automatic logo generation detection.
+
+6. **Set up your LoRA model** (optional)
    - Place your trained LoRA weights in `models/lora/`
    - Update the `LORA_WEIGHTS_FILE` in `config.py` with your filename
 
@@ -114,18 +125,48 @@ python app.py
 
 The application will start on `http://localhost:7860`
 
-**Important**: Make sure you have set up your Hugging Face token in the `.env` file before running!
+**Important**: Make sure you have set up both your Hugging Face token and Mistral API key in the `.env` file before running!
 
 ## 🎯 Usage
+
+### Chatting with Zypher AI
+
+The application now features an intelligent AI assistant powered by Mistral AI. You can:
+
+1. **Have Natural Conversations**
+   - Ask questions about design
+   - Get tips on creating better logos
+   - Learn about the application features
+   
+   Example: *"What makes a good logo?"*
+
+2. **Request Logo Generation Naturally**
+   - Just describe what you want in plain language
+   - The AI understands your intent and creates the image automatically
+   
+   Examples:
+   - *"Create a logo for my tech startup"*
+   - *"Generate a minimalist logo with blue colors"*
+   - *"Make me a gaming logo with neon effects"*
+   - *"Design a professional logo for a law firm"*
+
+3. **The AI Will Automatically**:
+   - Understand when you want to generate an image
+   - Enhance your prompt with professional design details
+   - Generate the logo using Flux Schnell
+   - Show you the result in the chat
 
 ### Basic Generation
 
 1. **Open the interface** at `http://localhost:7860`
-2. **Enter your prompt** in the large text area
-   - Example: *"A modern tech startup logo featuring a geometric hexagon, gradient from deep blue to cyan, minimalist professional design"*
-3. **Click the "✨ Generate Logo"** button (the big gradient button)
-4. **View your logo** in the center panel
-5. **Check the status box** below for detailed generation info
+2. **Type your message** in the chat box
+   - For conversation: *"What design styles are popular?"*
+   - For logo generation: *"Create a modern tech logo with blue gradients"*
+3. **Press Enter or click Send**
+4. **The AI will**:
+   - Respond with helpful information for questions
+   - Automatically generate and show logos when you request them
+5. **View results** directly in the chat interface
 
 ### Using LoRA
 
@@ -226,10 +267,40 @@ DEFAULT_GENERATION_PARAMS = {
     "height": 1024,
 }
 
+# Mistral AI Settings
+MISTRAL_API_KEY = os.getenv('MISTRAL_API_KEY', '')
+MISTRAL_MODEL = 'mistral-large-latest'  # or 'mistral-medium-latest', 'mistral-small-latest'
+
 # UI Settings
 SERVER_PORT = 7860
 SHARE_LINK = False  # Set True for public link
 ```
+
+## 🧠 How the AI Chat Works
+
+Zypher AI uses a sophisticated system to provide intelligent conversations and automatic image generation:
+
+1. **Natural Language Understanding**: Mistral AI processes your messages to understand intent
+2. **Intent Detection**: The system identifies when you want to:
+   - Have a conversation (asks questions, seeks advice)
+   - Generate an image (requests logos, designs, graphics)
+3. **Smart Prompt Enhancement**: When generating images, the AI:
+   - Takes your simple request
+   - Adds professional design details
+   - Optimizes the prompt for Flux Schnell
+4. **Automatic Generation**: No need to switch modes - just chat naturally!
+
+### Example Workflow
+
+```
+You: "What makes a logo memorable?"
+AI: [Provides design advice and tips]
+
+You: "Create a logo using those principles for a coffee shop"
+AI: [Automatically generates a professional coffee shop logo]
+```
+
+The AI seamlessly transitions between conversation and creation!
 
 ## 📝 Adding Your LoRA Model
 
@@ -254,6 +325,13 @@ SHARE_LINK = False  # Set True for public link
 - Adjust `LORA_SCALE` in config.py to control LoRA influence
 
 ## 🛠️ Troubleshooting
+
+### Mistral API Error
+- **Error**: "Mistral API key not configured"
+- **Solution**: 
+  1. Get your API key from https://console.mistral.ai/api-keys/
+  2. Add to `.env` file: `MISTRAL_API_KEY=your_key_here`
+  3. Restart the application
 
 ### Authentication Error
 - **Error**: "This model requires authentication"

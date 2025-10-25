@@ -12,6 +12,7 @@ let currentSettings = {
 };
 
 let conversationHistory = [];
+let mistralConversationHistory = [];
 
 // Return Authorization headers if an auth token is available
 function getAuthHeaders() {
@@ -60,6 +61,7 @@ function usePrompt(button) {
 // New chat
 function newChat() {
     conversationHistory = [];
+    mistralConversationHistory = [];
     document.getElementById('messages').innerHTML = '';
     document.getElementById('welcomeScreen').style.display = 'flex';
     document.getElementById('promptInput').value = '';
@@ -87,56 +89,97 @@ async function sendMessage() {
     const sendBtn = document.getElementById('sendBtn');
     sendBtn.disabled = true;
     
-    // Show loading
-    showLoading();
+    // Show typing indicator instead of full loading overlay
+    const typingIndicator = addTypingIndicator();
     
     try {
-        // Prepare request data
-        const formData = new FormData();
-        formData.append('prompt', prompt);
-        formData.append('use_lora', currentSettings.use_lora);
-        formData.append('num_steps', currentSettings.num_steps);
-        formData.append('width', currentSettings.width);
-        formData.append('height', currentSettings.height);
-        formData.append('use_ip_adapter', currentSettings.use_ip_adapter);
-        formData.append('ip_adapter_scale', currentSettings.ip_adapter_scale);
+        // First, try to chat with Mistral AI
+        const authHeaders = getAuthHeaders();
+        const chatResponse = await fetch('/api/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...authHeaders
+            },
+            body: JSON.stringify({
+                message: prompt,
+                conversation_history: mistralConversationHistory
+            })
+        });
         
-        // Add reference image if provided
-        if (currentSettings.use_ip_adapter && currentSettings.reference_image) {
-            formData.append('reference_image', currentSettings.reference_image);
-        }
+        const chatData = await chatResponse.json();
         
-        // Send request
-                const authHeaders = getAuthHeaders();
-                const response = await fetch('/api/generate', {
-                    method: 'POST',
-                    headers: authHeaders,
-                    body: formData
-                });
+        // Remove typing indicator
+        removeTypingIndicator();
         
-        const data = await response.json();
-        
-        if (data.success) {
-            // Add assistant message with image
-            addMessage('assistant', '', data.image, data.metadata, data.filename);
-            
-            // Add to conversation history
-            conversationHistory.push({
-                user: prompt,
-                assistant: data.filename,
-                timestamp: new Date().toISOString()
+        if (chatData.success) {
+            // Add user message to Mistral conversation history
+            mistralConversationHistory.push({
+                role: 'user',
+                content: prompt
             });
             
-            // Update history list
-            updateHistoryList();
+            // If Mistral detected an image generation request and generated it
+            if (chatData.is_image_request && chatData.image) {
+                // Add assistant response message with streaming effect
+                const responseMsg = addStreamingMessage('assistant', '');
+                await streamText(chatData.response, responseMsg);
+                finalizeStreamingMessage();
+                
+                // Add the generated image
+                addMessage('assistant', '', chatData.image, chatData.metadata, chatData.filename);
+                
+                // Add to conversation history
+                conversationHistory.push({
+                    user: prompt,
+                    assistant: chatData.filename,
+                    timestamp: new Date().toISOString()
+                });
+                
+                // Add to Mistral conversation history
+                mistralConversationHistory.push({
+                    role: 'assistant',
+                    content: chatData.response
+                });
+                
+                updateHistoryList();
+            } 
+            // If Mistral wants to generate but there was an error or limit reached
+            else if (chatData.is_image_request) {
+                const responseMsg = addStreamingMessage('assistant', '');
+                await streamText(chatData.response, responseMsg);
+                finalizeStreamingMessage();
+                
+                mistralConversationHistory.push({
+                    role: 'assistant',
+                    content: chatData.response
+                });
+                
+                // Show upgrade message if needed
+                if (chatData.needs_upgrade) {
+                    // User can manually upgrade
+                }
+            }
+            // Normal chat response with streaming
+            else {
+                const responseMsg = addStreamingMessage('assistant', '');
+                await streamText(chatData.response, responseMsg);
+                finalizeStreamingMessage();
+                
+                mistralConversationHistory.push({
+                    role: 'assistant',
+                    content: chatData.response
+                });
+            }
         } else {
-            addErrorMessage(data.error || 'Generation failed');
+            addErrorMessage(chatData.error || 'Chat failed. Please try again.');
         }
+        
     } catch (error) {
         console.error('Error:', error);
+        removeTypingIndicator();
         addErrorMessage('Network error. Please check your connection and try again.');
     } finally {
-        hideLoading();
         sendBtn.disabled = false;
         focusInput();
     }
@@ -211,6 +254,131 @@ function addMessage(role, text, imageUrl = null, metadata = null, filename = nul
     
     messages.appendChild(messageDiv);
     scrollToBottom();
+    
+    return messageDiv;
+}
+
+// Add typing indicator (like ChatGPT)
+function addTypingIndicator() {
+    const messages = document.getElementById('messages');
+    const typingDiv = document.createElement('div');
+    typingDiv.className = 'message assistant typing-indicator';
+    typingDiv.id = 'typingIndicator';
+    
+    typingDiv.innerHTML = `
+        <div class="message-avatar">🎨</div>
+        <div class="message-content">
+            <div class="typing-dots">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+        </div>
+    `;
+    
+    messages.appendChild(typingDiv);
+    scrollToBottom();
+    
+    return typingDiv;
+}
+
+// Add generating indicator (for image generation)
+function addGeneratingIndicator() {
+    const messages = document.getElementById('messages');
+    const generatingDiv = document.createElement('div');
+    generatingDiv.className = 'message assistant typing-indicator';
+    generatingDiv.id = 'generatingIndicator';
+    
+    generatingDiv.innerHTML = `
+        <div class="message-avatar">🎨</div>
+        <div class="message-content">
+            <div class="generating-status">
+                <div class="generating-spinner"></div>
+                <span>Generating your logo...</span>
+            </div>
+        </div>
+    `;
+    
+    messages.appendChild(generatingDiv);
+    scrollToBottom();
+    
+    return generatingDiv;
+}
+
+// Remove generating indicator
+function removeGeneratingIndicator() {
+    const indicator = document.getElementById('generatingIndicator');
+    if (indicator) {
+        indicator.remove();
+    }
+}
+
+// Remove typing indicator
+function removeTypingIndicator() {
+    const indicator = document.getElementById('typingIndicator');
+    if (indicator) {
+        indicator.remove();
+    }
+}
+
+// Add streaming message (for text that appears gradually)
+function addStreamingMessage(role, text = '') {
+    const messages = document.getElementById('messages');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${role}`;
+    messageDiv.id = 'streamingMessage';
+    
+    const avatar = role === 'user' ? '👤' : '🎨';
+    
+    messageDiv.innerHTML = `
+        <div class="message-avatar">${avatar}</div>
+        <div class="message-content">
+            <div class="message-text" id="streamingText">${escapeHtml(text)}</div>
+        </div>
+    `;
+    
+    messages.appendChild(messageDiv);
+    scrollToBottom();
+    
+    return messageDiv;
+}
+
+// Update streaming message text
+function updateStreamingMessage(text) {
+    const streamingText = document.getElementById('streamingText');
+    if (streamingText) {
+        streamingText.innerHTML = escapeHtml(text);
+        scrollToBottom();
+    }
+}
+
+// Finalize streaming message (remove ID to prevent further updates)
+function finalizeStreamingMessage() {
+    const streamingMsg = document.getElementById('streamingMessage');
+    if (streamingMsg) {
+        streamingMsg.removeAttribute('id');
+    }
+    const streamingText = document.getElementById('streamingText');
+    if (streamingText) {
+        streamingText.removeAttribute('id');
+    }
+}
+
+// Simulate streaming effect for text
+async function streamText(text, messageDiv) {
+    const textElement = messageDiv.querySelector('.message-text');
+    if (!textElement) return;
+    
+    // Split into words for more natural streaming
+    const words = text.split(' ');
+    textElement.textContent = '';
+    
+    for (let i = 0; i < words.length; i++) {
+        textElement.textContent += (i > 0 ? ' ' : '') + words[i];
+        scrollToBottom();
+        // Adjust delay for speed (lower = faster)
+        await new Promise(resolve => setTimeout(resolve, 30));
+    }
 }
 
 // Add error message
