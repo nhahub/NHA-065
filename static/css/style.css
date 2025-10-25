@@ -61,12 +61,20 @@ body {
     font-size: 16px;
 }
 
+.logo-image {
+    width: 32px;
+    height: 32px;
+    object-fit: contain;
+}
+
 .logo-icon {
     font-size: 24px;
 }
 
 .logo-icon-large {
-    font-size: 64px;
+    width: 80px;
+    height: 80px;
+    object-fit: contain;
     display: block;
     margin-bottom: 16px;
 }
@@ -352,12 +360,20 @@ body {
     flex-shrink: 0;
 }
 
+.avatar-logo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
 .message.user .message-avatar {
     background: var(--accent-color);
 }
 
 .message.assistant .message-avatar {
-    background: var(--bg-input);
+    background: transparent;
+    padding: 2px;
 }
 
 .message-content {

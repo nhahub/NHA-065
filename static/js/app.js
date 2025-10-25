@@ -221,7 +221,7 @@ function addMessage(role, text, imageUrl = null, metadata = null, filename = nul
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${role}`;
     
-    const avatar = role === 'user' ? '👤' : '🎨';
+    const avatar = role === 'user' ? '👤' : '<img src="/photos/zypher.jpeg" alt="AI" class="avatar-logo">';
     
     let messageHTML = `
         <div class="message-avatar">${avatar}</div>
@@ -301,7 +301,7 @@ function addTypingIndicator() {
     typingDiv.id = 'typingIndicator';
     
     typingDiv.innerHTML = `
-        <div class="message-avatar">🎨</div>
+        <div class="message-avatar"><img src="/photos/zypher.jpeg" alt="AI" class="avatar-logo"></div>
         <div class="message-content">
             <div class="typing-dots">
                 <span></span>
@@ -325,7 +325,7 @@ function addGeneratingIndicator() {
     generatingDiv.id = 'generatingIndicator';
     
     generatingDiv.innerHTML = `
-        <div class="message-avatar">🎨</div>
+        <div class="message-avatar"><img src="/photos/zypher.jpeg" alt="AI" class="avatar-logo"></div>
         <div class="message-content">
             <div class="generating-status">
                 <div class="generating-spinner"></div>
@@ -385,7 +385,7 @@ function addStreamingMessage(role, text = '') {
     messageDiv.className = `message ${role}`;
     messageDiv.id = 'streamingMessage';
     
-    const avatar = role === 'user' ? '👤' : '🎨';
+    const avatar = role === 'user' ? '👤' : '<img src="/photos/zypher.jpeg" alt="AI" class="avatar-logo">';
     
     messageDiv.innerHTML = `
         <div class="message-avatar">${avatar}</div>

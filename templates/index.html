@@ -8,9 +8,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Favicon served from top-level photos/ folder -->
-    <link rel="icon" href="{{ url_for('serve_photos', filename='favicon.ico') }}" type="image/x-icon">
-    <link rel="shortcut icon" href="{{ url_for('serve_photos', filename='favicon.ico') }}" type="image/x-icon">
+    <!-- Favicon - Zypher Logo -->
+    <link rel="icon" href="{{ url_for('serve_photos', filename='zypher.jpeg') }}" type="image/jpeg">
+    <link rel="shortcut icon" href="{{ url_for('serve_photos', filename='zypher.jpeg') }}" type="image/jpeg">
+    <link rel="apple-touch-icon" href="{{ url_for('serve_photos', filename='zypher.jpeg') }}">
     <!-- Marked.js for Markdown rendering -->
     <script src="https://cdn.jsdelivr.net/npm/marked@11.1.0/marked.min.js"></script>
 </head>
@@ -29,7 +30,7 @@
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <div class="logo">
-                <span class="logo-icon">🎨</span>
+                <img src="{{ url_for('serve_photos', filename='zypher.jpeg') }}" alt="Zypher AI" class="logo-image">
                 <span class="logo-text">Zypher AI</span>
             </div>
             <button class="new-chat-btn" onclick="newChat()">
@@ -93,7 +94,7 @@
             <div class="welcome-screen" id="welcomeScreen">
                 <div class="welcome-content">
                     <h1>
-                        <span class="logo-icon-large">🎨</span>
+                        <img src="{{ url_for('serve_photos', filename='zypher.jpeg') }}" alt="Zypher AI" class="logo-icon-large">
                         Zypher AI Logo Generator
                     </h1>
                     <p class="subtitle">Powered by Flux Schnell - Create stunning logos with AI</p>
