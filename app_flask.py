@@ -305,6 +305,15 @@ def generate_from_chat():
                 'error': 'Image prompt is required'
             }), 400
         
+        # Get generation settings from request (with defaults)
+        use_lora = data.get('use_lora', False)
+        lora_filename = data.get('lora_filename', None)
+        num_steps = data.get('num_steps', 4)
+        width = data.get('width', 1024)
+        height = data.get('height', 1024)
+        use_ip_adapter = data.get('use_ip_adapter', False)
+        ip_adapter_scale = data.get('ip_adapter_scale', 0.5)
+        
         # Get authenticated user
         firebase_user = getattr(request, 'firebase_user', None)
         if not firebase_user:
@@ -318,16 +327,15 @@ def generate_from_chat():
             if not user:
                 return jsonify({'success': False, 'error': 'User not found'}), 404
         
-        # Generate the image
+        # Generate the image with user settings
         try:
-            # Use default settings for auto-generation
             image = model_manager.generate_image(
                 prompt=image_prompt,
-                use_lora=False,
-                lora_filename=None,
-                num_inference_steps=4,
-                width=1024,
-                height=1024
+                use_lora=use_lora,
+                lora_filename=lora_filename,
+                num_inference_steps=num_steps,
+                width=width,
+                height=height
             )
             
             # Save image
@@ -359,6 +367,17 @@ def generate_from_chat():
             except Exception:
                 models.db.session.rollback()
             
+            # Build model description
+            model_parts = []
+            if use_lora:
+                lora_name = lora_filename or "Custom LoRA"
+                model_parts.append(f"LoRA: {lora_name}")
+            else:
+                model_parts.append("Base Flux Schnell")
+            if use_ip_adapter:
+                model_parts.append(f"IP-Adapter ({ip_adapter_scale:.1%})")
+            model_desc = " + ".join(model_parts)
+            
             # Return success with image
             return jsonify({
                 'success': True,
@@ -366,9 +385,12 @@ def generate_from_chat():
                 'filename': filename,
                 'path': image_path,
                 'metadata': {
-                    'model': 'Base Flux Schnell',
-                    'steps': 4,
-                    'dimensions': '1024×1024',
+                    'model': model_desc,
+                    'lora_used': lora_filename if use_lora else None,
+                    'steps': num_steps,
+                    'dimensions': f'{width}×{height}',
+                    'ip_adapter': use_ip_adapter,
+                    'ip_adapter_scale': ip_adapter_scale if use_ip_adapter else None,
                     'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
             })

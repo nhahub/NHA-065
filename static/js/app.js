@@ -138,7 +138,7 @@ async function sendMessage() {
                 // Show "Generating your logo..." message
                 const generatingIndicator = addGeneratingIndicator();
                 
-                // Now call the generate endpoint
+                // Now call the generate endpoint with current settings
                 try {
                     const generateResponse = await fetch('/api/generate-from-chat', {
                         method: 'POST',
@@ -147,7 +147,14 @@ async function sendMessage() {
                             ...authHeaders
                         },
                         body: JSON.stringify({
-                            image_prompt: chatData.image_prompt
+                            image_prompt: chatData.image_prompt,
+                            use_lora: currentSettings.use_lora,
+                            lora_filename: currentSettings.lora_filename,
+                            num_steps: currentSettings.num_steps,
+                            width: currentSettings.width,
+                            height: currentSettings.height,
+                            use_ip_adapter: currentSettings.use_ip_adapter,
+                            ip_adapter_scale: currentSettings.ip_adapter_scale
                         })
                     });
                     
