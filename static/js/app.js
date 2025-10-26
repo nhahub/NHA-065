@@ -656,7 +656,7 @@ Status: ${model.base_model_loaded ? '🟢 Ready' : '🔴 Not ready'}
 // Load history
 async function loadHistory() {
     try {
-    const response = await fetch('/api/history', { headers: getAuthHeaders() });
+        const response = await fetch('/api/history', { headers: getAuthHeaders() });
         const data = await response.json();
         
         if (data.success && data.history) {
@@ -665,6 +665,128 @@ async function loadHistory() {
         }
     } catch (error) {
         console.error('Failed to load history:', error);
+    }
+}
+
+// Update history list in sidebar
+function updateHistoryList() {
+    const historyList = document.getElementById('historyList');
+    
+    if (conversationHistory.length === 0) {
+        historyList.innerHTML = '<p style="color: var(--text-secondary); font-size: 13px; padding: 12px;">No history yet</p>';
+        return;
+    }
+    
+    historyList.innerHTML = conversationHistory
+        .map((item) => {
+            const text = item.preview || item.prompt || 'Untitled';
+            const timestamp = item.timestamp ? new Date(item.timestamp).toLocaleDateString() : '';
+            return `
+                <div class="history-item-wrapper">
+                    <button class="history-item" onclick="viewHistoryItem(${item.id})" title="${escapeHtml(item.prompt)}">
+                        <span class="history-item-text">${escapeHtml(text)}</span>
+                        ${timestamp ? `<span class="history-item-date">${timestamp}</span>` : ''}
+                    </button>
+                    <button class="history-item-delete" onclick="deleteHistoryItem(event, ${item.id})" title="Delete">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                    </button>
+                </div>
+            `;
+        })
+        .join('');
+}
+
+// View history item
+async function viewHistoryItem(historyId) {
+    try {
+        const response = await fetch(`/api/history/${historyId}`, { headers: getAuthHeaders() });
+        const data = await response.json();
+        
+        if (data.success && data.item) {
+            // Clear current conversation
+            document.getElementById('messages').innerHTML = '';
+            document.getElementById('welcomeScreen').style.display = 'none';
+            
+            // Show the historical prompt and image
+            const item = data.item;
+            addMessage('user', item.prompt);
+            
+            if (item.image_path) {
+                // Check if we can load the image
+                const imageName = item.image_path.split('/').pop();
+                const imageUrl = `/outputs/${imageName}`;
+                
+                addMessage('assistant', '', imageUrl, {
+                    model: 'Historical generation',
+                    steps: '-',
+                    dimensions: '-',
+                    timestamp: item.timestamp ? new Date(item.timestamp).toLocaleString() : 'Unknown'
+                }, imageName);
+            }
+        } else {
+            alert('Could not load history item: ' + (data.error || 'Unknown error'));
+        }
+    } catch (error) {
+        console.error('Error loading history item:', error);
+        alert('Failed to load history item');
+    }
+}
+
+// Delete history item
+async function deleteHistoryItem(event, historyId) {
+    event.stopPropagation(); // Prevent triggering the view action
+    
+    if (!confirm('Are you sure you want to delete this history item?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/history/${historyId}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            // Remove from local array
+            conversationHistory = conversationHistory.filter(item => item.id !== historyId);
+            updateHistoryList();
+        } else {
+            alert('Could not delete history item: ' + (data.error || 'Unknown error'));
+        }
+    } catch (error) {
+        console.error('Error deleting history item:', error);
+        alert('Failed to delete history item');
+    }
+}
+
+// Clear all history
+async function clearAllHistory() {
+    if (!confirm('Are you sure you want to delete ALL history? This cannot be undone.')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/history/clear', {
+            method: 'POST',
+            headers: getAuthHeaders()
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            conversationHistory = [];
+            updateHistoryList();
+            // Optionally start a new chat
+            newChat();
+        } else {
+            alert('Could not clear history: ' + (data.error || 'Unknown error'));
+        }
+    } catch (error) {
+        console.error('Error clearing history:', error);
+        alert('Failed to clear history');
     }
 }
 
@@ -793,31 +915,6 @@ async function saveUserProfile() {
         console.error('Failed to save profile', err);
         alert('Failed to save profile');
     }
-}
-
-// Update history list in sidebar
-function updateHistoryList() {
-    const historyList = document.getElementById('historyList');
-    
-    if (conversationHistory.length === 0) {
-        historyList.innerHTML = '<p style="color: var(--text-secondary); font-size: 13px; padding: 12px;">No history yet</p>';
-        return;
-    }
-    
-    historyList.innerHTML = conversationHistory
-        .slice(-10)
-        .reverse()
-        .map((item, index) => {
-            const text = item.user || item[0] || 'Untitled';
-            return `<button class="history-item" onclick="viewHistoryItem(${index})">${escapeHtml(text.substring(0, 40))}${text.length > 40 ? '...' : ''}</button>`;
-        })
-        .join('');
-}
-
-// View history item
-function viewHistoryItem(index) {
-    // This would load a previous conversation
-    console.log('View history item:', index);
 }
 
 // Utility: Escape HTML

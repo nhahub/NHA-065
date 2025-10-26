@@ -610,14 +610,41 @@ def generate_logo():
 
 
 @app.route('/api/history', methods=['GET'])
+@verify_firebase_token
 def get_history():
-    """Get chat history"""
+    """Get user's chat history from database"""
     try:
-        history = chat_history.format_for_display()
-        return jsonify({
-            'success': True,
-            'history': history
-        })
+        firebase_user = getattr(request, 'firebase_user', None)
+        if not firebase_user:
+            return jsonify({'success': False, 'error': 'Authentication required'}), 401
+        
+        uid = firebase_user.get('uid')
+        
+        with app.app_context():
+            user = models.User.query.filter_by(firebase_uid=uid).first()
+            if not user:
+                return jsonify({'success': True, 'history': []})
+            
+            # Get all chat history for this user, ordered by most recent first
+            history_entries = models.ChatHistory.query.filter_by(user_id=user.id)\
+                .order_by(models.ChatHistory.created_at.desc())\
+                .limit(50)\
+                .all()
+            
+            history = []
+            for entry in history_entries:
+                history.append({
+                    'id': entry.id,
+                    'prompt': entry.prompt,
+                    'image_path': entry.image_path,
+                    'timestamp': entry.created_at.isoformat() if entry.created_at else None,
+                    'preview': entry.prompt[:50] + ('...' if len(entry.prompt) > 50 else '')
+                })
+            
+            return jsonify({
+                'success': True,
+                'history': history
+            })
     except Exception as e:
         return jsonify({
             'success': False,
@@ -625,16 +652,106 @@ def get_history():
         }), 500
 
 
-@app.route('/api/history/clear', methods=['POST'])
-def clear_history():
-    """Clear chat history"""
+@app.route('/api/history/<int:history_id>', methods=['GET'])
+@verify_firebase_token
+def get_history_item(history_id):
+    """Get a specific chat history item"""
     try:
-        chat_history.clear_history()
-        return jsonify({
-            'success': True,
-            'message': 'History cleared successfully'
-        })
+        firebase_user = getattr(request, 'firebase_user', None)
+        if not firebase_user:
+            return jsonify({'success': False, 'error': 'Authentication required'}), 401
+        
+        uid = firebase_user.get('uid')
+        
+        with app.app_context():
+            user = models.User.query.filter_by(firebase_uid=uid).first()
+            if not user:
+                return jsonify({'success': False, 'error': 'User not found'}), 404
+            
+            # Get the specific history entry, ensuring it belongs to this user
+            entry = models.ChatHistory.query.filter_by(id=history_id, user_id=user.id).first()
+            if not entry:
+                return jsonify({'success': False, 'error': 'History item not found'}), 404
+            
+            return jsonify({
+                'success': True,
+                'item': {
+                    'id': entry.id,
+                    'prompt': entry.prompt,
+                    'image_path': entry.image_path,
+                    'timestamp': entry.created_at.isoformat() if entry.created_at else None
+                }
+            })
     except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/history/<int:history_id>', methods=['DELETE'])
+@verify_firebase_token
+def delete_history_item(history_id):
+    """Delete a specific chat history item"""
+    try:
+        firebase_user = getattr(request, 'firebase_user', None)
+        if not firebase_user:
+            return jsonify({'success': False, 'error': 'Authentication required'}), 401
+        
+        uid = firebase_user.get('uid')
+        
+        with app.app_context():
+            user = models.User.query.filter_by(firebase_uid=uid).first()
+            if not user:
+                return jsonify({'success': False, 'error': 'User not found'}), 404
+            
+            # Get the specific history entry, ensuring it belongs to this user
+            entry = models.ChatHistory.query.filter_by(id=history_id, user_id=user.id).first()
+            if not entry:
+                return jsonify({'success': False, 'error': 'History item not found'}), 404
+            
+            # Delete the entry
+            models.db.session.delete(entry)
+            models.db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': 'History item deleted successfully'
+            })
+    except Exception as e:
+        models.db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/history/clear', methods=['POST'])
+@verify_firebase_token
+def clear_history():
+    """Clear all chat history for the user"""
+    try:
+        firebase_user = getattr(request, 'firebase_user', None)
+        if not firebase_user:
+            return jsonify({'success': False, 'error': 'Authentication required'}), 401
+        
+        uid = firebase_user.get('uid')
+        
+        with app.app_context():
+            user = models.User.query.filter_by(firebase_uid=uid).first()
+            if not user:
+                return jsonify({'success': False, 'error': 'User not found'}), 404
+            
+            # Delete all history entries for this user
+            models.ChatHistory.query.filter_by(user_id=user.id).delete()
+            models.db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': 'All history cleared successfully'
+            })
+    except Exception as e:
+        models.db.session.rollback()
         return jsonify({
             'success': False,
             'error': str(e)
