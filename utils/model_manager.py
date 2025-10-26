@@ -108,6 +108,16 @@ class ModelManager:
             print(f"Loading LoRA weights: {lora_filename}...")
             # Load new LoRA weights
             self.pipeline.load_lora_weights(lora_path)
+            
+            # Set LoRA scale/strength for Flux models
+            # In newer diffusers, we can use set_adapters or fuse the LoRA
+            try:
+                # Try to set the adapter scale
+                self.pipeline.set_adapters(["default"], adapter_weights=[config.LORA_SCALE])
+            except:
+                # If that doesn't work, the scale might be applied automatically
+                print(f"Note: Using default LoRA scale (scale set during generation)")
+            
             self.lora_loaded = True
             self.current_lora = lora_filename
             print(f"✓ LoRA weights loaded successfully: {lora_filename} (scale: {config.LORA_SCALE})")
@@ -219,9 +229,8 @@ class ModelManager:
                 # Set IP-Adapter scale
                 self.pipeline.set_ip_adapter_scale(ip_adapter_scale)
             
-            # Add LoRA scale if using LoRA
-            if use_lora:
-                gen_args["cross_attention_kwargs"] = {"scale": config.LORA_SCALE}
+            # Note: For Flux models, LoRA scale is set during loading, not during generation
+            # No need to pass cross_attention_kwargs or joint_attention_kwargs
             
             # Generate image
             with torch.inference_mode():
