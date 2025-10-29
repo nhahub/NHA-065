@@ -3,7 +3,6 @@
 // State
 let currentSettings = {
     use_lora: false,
-    lora_filename: null,
     num_steps: 4,
     width: 1024,
     height: 1024,
@@ -13,8 +12,6 @@ let currentSettings = {
 };
 
 let conversationHistory = [];
-let mistralConversationHistory = [];
-let availableLoras = [];
 
 // Return Authorization headers if an auth token is available
 function getAuthHeaders() {
@@ -30,7 +27,6 @@ let userProfile = null;
 document.addEventListener("DOMContentLoaded", () => {
     loadHistory();
     loadUserProfile();
-    loadAvailableLoras();
     focusInput();
 });
 
@@ -63,108 +59,116 @@ function usePrompt(button) {
 
 // New chat
 function newChat() {
-    conversationHistory = [];
-    document.getElementById('messages').innerHTML = '';
-    document.getElementById('welcomeScreen').style.display = 'flex';
-    document.getElementById('promptInput').value = '';
-    focusInput();
+  conversationHistory = [];
+  document.getElementById("messages").innerHTML = "";
+  document.getElementById("welcomeScreen").style.display = "flex";
+  document.getElementById("promptInput").value = "";
+  focusInput();
 }
 
 // Send message
 async function sendMessage() {
-    const input = document.getElementById('promptInput');
-    const prompt = input.value.trim();
-    
-    if (!prompt) return;
-    
-    // Hide welcome screen
-    document.getElementById('welcomeScreen').style.display = 'none';
-    
-    // Add user message
-    addMessage('user', prompt);
-    
-    // Clear input
-    input.value = '';
-    input.style.height = 'auto';
-    
-    // Disable send button
-    const sendBtn = document.getElementById('sendBtn');
-    sendBtn.disabled = true;
-    
-    // Show loading
-    showLoading();
-    
-    try {
-        // Prepare request data
-        const formData = new FormData();
-        formData.append('prompt', prompt);
-        formData.append('use_lora', currentSettings.use_lora);
-        formData.append('num_steps', currentSettings.num_steps);
-        formData.append('width', currentSettings.width);
-        formData.append('height', currentSettings.height);
-        formData.append('use_ip_adapter', currentSettings.use_ip_adapter);
-        formData.append('ip_adapter_scale', currentSettings.ip_adapter_scale);
-        
-        // Add reference image if provided
-        if (currentSettings.use_ip_adapter && currentSettings.reference_image) {
-            formData.append('reference_image', currentSettings.reference_image);
-        }
-        
-        // Send request
-                const authHeaders = getAuthHeaders();
-                const response = await fetch('/api/generate', {
-                    method: 'POST',
-                    headers: authHeaders,
-                    body: formData
-                });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            // Add assistant message with image
-            addMessage('assistant', '', data.image, data.metadata, data.filename);
-            
-            // Add to conversation history
-            conversationHistory.push({
-                user: prompt,
-                assistant: data.filename,
-                timestamp: new Date().toISOString()
-            });
-            
-            // Update history list
-            updateHistoryList();
-        } else {
-            addErrorMessage(data.error || 'Generation failed');
-        }
-    } catch (error) {
-        console.error('Error:', error);
-        addErrorMessage('Network error. Please check your connection and try again.');
-    } finally {
-        hideLoading();
-        sendBtn.disabled = false;
-        focusInput();
+  const input = document.getElementById("promptInput");
+  const prompt = input.value.trim();
+
+  if (!prompt) return;
+
+  // Hide welcome screen
+  document.getElementById("welcomeScreen").style.display = "none";
+
+  // Add user message
+  addMessage("user", prompt);
+
+  // Clear input
+  input.value = "";
+  input.style.height = "auto";
+
+  // Disable send button
+  const sendBtn = document.getElementById("sendBtn");
+  sendBtn.disabled = true;
+
+  // Show loading
+  showLoading();
+
+  try {
+    // Prepare request data
+    const formData = new FormData();
+    formData.append("prompt", prompt);
+    formData.append("use_lora", currentSettings.use_lora);
+    formData.append("num_steps", currentSettings.num_steps);
+    formData.append("width", currentSettings.width);
+    formData.append("height", currentSettings.height);
+    formData.append("use_ip_adapter", currentSettings.use_ip_adapter);
+    formData.append("ip_adapter_scale", currentSettings.ip_adapter_scale);
+
+    // Add reference image if provided
+    if (currentSettings.use_ip_adapter && currentSettings.reference_image) {
+      formData.append("reference_image", currentSettings.reference_image);
     }
+
+    // Send request
+    const authHeaders = getAuthHeaders();
+    const response = await fetch("/api/generate", {
+      method: "POST",
+      headers: authHeaders,
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (data.success) {
+      // Add assistant message with image
+      addMessage("assistant", "", data.image, data.metadata, data.filename);
+
+      // Add to conversation history
+      conversationHistory.push({
+        user: prompt,
+        assistant: data.filename,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Update history list
+      updateHistoryList();
+    } else {
+      addErrorMessage(data.error || "Generation failed");
+    }
+  } catch (error) {
+    console.error("Error:", error);
+    addErrorMessage(
+      "Network error. Please check your connection and try again."
+    );
+  } finally {
+    hideLoading();
+    sendBtn.disabled = false;
+    focusInput();
+  }
 }
 
 // Add message to chat
-function addMessage(role, text, imageUrl = null, metadata = null, filename = null) {
-    const messages = document.getElementById('messages');
-    const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${role}`;
-    
-    const avatar = role === 'user' ? '👤' : '🎨';
-    
-    let messageHTML = `
+function addMessage(
+  role,
+  text,
+  imageUrl = null,
+  metadata = null,
+  filename = null
+) {
+  const messages = document.getElementById("messages");
+  const messageDiv = document.createElement("div");
+  messageDiv.className = `message ${role}`;
+
+  const avatar = role === "user" ? "👤" : "🎨";
+
+  let messageHTML = `
         <div class="message-avatar">${avatar}</div>
         <div class="message-content">
     `;
-    
-    if (text) {
-        messageHTML += `<div class="message-text">${escapeHtml(text)}</div>`;
-    }
-    
-    if (imageUrl) {
-        messageHTML += `
+
+  if (text) {
+    messageHTML += `<div class="message-text">${escapeHtml(text)}</div>`;
+  }
+
+  if (imageUrl) {
+    messageHTML += `
             <div class="message-image">
                 <img src="${imageUrl}" alt="Generated logo">
             </div>
@@ -218,13 +222,13 @@ function addMessage(role, text, imageUrl = null, metadata = null, filename = nul
                 }
             </div>
         `;
-    }
-    
-    messageHTML += `</div>`;
-    messageDiv.innerHTML = messageHTML;
-    
-    messages.appendChild(messageDiv);
-    scrollToBottom();
+  }
+
+  messageHTML += `</div>`;
+  messageDiv.innerHTML = messageHTML;
+
+  messages.appendChild(messageDiv);
+  scrollToBottom();
 }
 
 // Add error message
@@ -276,34 +280,34 @@ function toggleSidebar() {
 
 // Toggle settings modal
 function toggleSettings() {
-    const modal = document.getElementById('settingsModal');
-    modal.classList.toggle('active');
-    
-    // Load current settings
-    const useLoraToggle = document.getElementById('useLoraToggle');
-    const stepsSlider = document.getElementById('stepsSlider');
-    const widthSlider = document.getElementById('widthSlider');
-    const heightSlider = document.getElementById('heightSlider');
+  const modal = document.getElementById("settingsModal");
+  modal.classList.toggle("active");
 
-    if (useLoraToggle) useLoraToggle.checked = currentSettings.use_lora;
-    if (stepsSlider) stepsSlider.value = currentSettings.num_steps;
-    if (widthSlider) widthSlider.value = currentSettings.width;
-    if (heightSlider) heightSlider.value = currentSettings.height;
+  // Load current settings
+  const useLoraToggle = document.getElementById("useLoraToggle");
+  const stepsSlider = document.getElementById("stepsSlider");
+  const widthSlider = document.getElementById("widthSlider");
+  const heightSlider = document.getElementById("heightSlider");
+
+  if (useLoraToggle) useLoraToggle.checked = currentSettings.use_lora;
+  if (stepsSlider) stepsSlider.value = currentSettings.num_steps;
+  if (widthSlider) widthSlider.value = currentSettings.width;
+  if (heightSlider) heightSlider.value = currentSettings.height;
 
   updateStepsValue(currentSettings.num_steps);
   updateWidthValue(currentSettings.width);
   updateHeightValue(currentSettings.height);
 
-    // Populate profile fields if available
-    const fnameEl = document.getElementById('fnameInput');
-    const lnameEl = document.getElementById('lnameInput');
-    if (userProfile) {
-        if (fnameEl) fnameEl.value = userProfile.fname || '';
-        if (lnameEl) lnameEl.value = userProfile.lname || '';
-    } else {
-        if (fnameEl) fnameEl.value = '';
-        if (lnameEl) lnameEl.value = '';
-    }
+  // Populate profile fields if available
+  const fnameEl = document.getElementById("fnameInput");
+  const lnameEl = document.getElementById("lnameInput");
+  if (userProfile) {
+    if (fnameEl) fnameEl.value = userProfile.fname || "";
+    if (lnameEl) lnameEl.value = userProfile.lname || "";
+  } else {
+    if (fnameEl) fnameEl.value = "";
+    if (lnameEl) lnameEl.value = "";
+  }
 }
 
 // Update setting values
@@ -369,10 +373,10 @@ function removeReferenceImage(event) {
 }
 
 // Save settings
-document.addEventListener('change', (e) => {
-    if (e.target.id === 'useLoraToggle') {
-        currentSettings.use_lora = e.target.checked;
-    }
+document.addEventListener("change", (e) => {
+  if (e.target.id === "useLoraToggle") {
+    currentSettings.use_lora = e.target.checked;
+  }
 });
 
 // Load model status
@@ -409,198 +413,17 @@ Status: ${model.base_model_loaded ? "🟢 Ready" : "🔴 Not ready"}
 
 // Load history
 async function loadHistory() {
-    try {
-    const response = await fetch('/api/history', { headers: getAuthHeaders() });
-        const data = await response.json();
-        
-        if (data.success && data.history) {
-            conversationHistory = data.history;
-            updateHistoryList();
-        }
-    } catch (error) {
-        console.error('Failed to load history:', error);
-    }
-}
+  try {
+    const response = await fetch("/api/history", { headers: getAuthHeaders() });
+    const data = await response.json();
 
-// Update history list in sidebar
-function updateHistoryList() {
-    const historyList = document.getElementById('historyList');
-    
-    if (conversationHistory.length === 0) {
-        historyList.innerHTML = '<p style="color: var(--text-secondary); font-size: 13px; padding: 12px;">No history yet</p>';
-        return;
+    if (data.success && data.history) {
+      conversationHistory = data.history;
+      updateHistoryList();
     }
-    
-    historyList.innerHTML = conversationHistory
-        .map((item) => {
-            const text = item.preview || item.prompt || 'Untitled';
-            const timestamp = item.timestamp ? new Date(item.timestamp).toLocaleDateString() : '';
-            return `
-                <div class="history-item-wrapper">
-                    <button class="history-item" onclick="viewHistoryItem(${item.id})" title="${escapeHtml(item.prompt)}">
-                        <span class="history-item-text">${escapeHtml(text)}</span>
-                        ${timestamp ? `<span class="history-item-date">${timestamp}</span>` : ''}
-                    </button>
-                    <button class="history-item-delete" onclick="deleteHistoryItem(event, ${item.id})" title="Delete">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="3 6 5 6 21 6"></polyline>
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                        </svg>
-                    </button>
-                </div>
-            `;
-        })
-        .join('');
-}
-
-// View history item
-async function viewHistoryItem(historyId) {
-    try {
-        const response = await fetch(`/api/history/${historyId}`, { headers: getAuthHeaders() });
-        const data = await response.json();
-        
-        if (data.success && data.item) {
-            // Clear current conversation
-            document.getElementById('messages').innerHTML = '';
-            document.getElementById('welcomeScreen').style.display = 'none';
-            
-            // Show the historical prompt and image
-            const item = data.item;
-            addMessage('user', item.prompt);
-            
-            if (item.image_path) {
-                // Check if we can load the image
-                const imageName = item.image_path.split('/').pop();
-                const imageUrl = `/outputs/${imageName}`;
-                
-                addMessage('assistant', '', imageUrl, {
-                    model: 'Historical generation',
-                    steps: '-',
-                    dimensions: '-',
-                    timestamp: item.timestamp ? new Date(item.timestamp).toLocaleString() : 'Unknown'
-                }, imageName);
-            }
-        } else {
-            alert('Could not load history item: ' + (data.error || 'Unknown error'));
-        }
-    } catch (error) {
-        console.error('Error loading history item:', error);
-        alert('Failed to load history item');
-    }
-}
-
-// Delete history item
-async function deleteHistoryItem(event, historyId) {
-    event.stopPropagation(); // Prevent triggering the view action
-    
-    if (!confirm('Are you sure you want to delete this history item?')) {
-        return;
-    }
-    
-    try {
-        const response = await fetch(`/api/history/${historyId}`, {
-            method: 'DELETE',
-            headers: getAuthHeaders()
-        });
-        const data = await response.json();
-        
-        if (data.success) {
-            // Remove from local array
-            conversationHistory = conversationHistory.filter(item => item.id !== historyId);
-            updateHistoryList();
-        } else {
-            alert('Could not delete history item: ' + (data.error || 'Unknown error'));
-        }
-    } catch (error) {
-        console.error('Error deleting history item:', error);
-        alert('Failed to delete history item');
-    }
-}
-
-// Clear all history
-async function clearAllHistory() {
-    if (!confirm('Are you sure you want to delete ALL history? This cannot be undone.')) {
-        return;
-    }
-    
-    try {
-        const response = await fetch('/api/history/clear', {
-            method: 'POST',
-            headers: getAuthHeaders()
-        });
-        const data = await response.json();
-        
-        if (data.success) {
-            conversationHistory = [];
-            updateHistoryList();
-            // Optionally start a new chat
-            newChat();
-        } else {
-            alert('Could not clear history: ' + (data.error || 'Unknown error'));
-        }
-    } catch (error) {
-        console.error('Error clearing history:', error);
-        alert('Failed to clear history');
-    }
-}
-
-// Load available LoRA models
-async function loadAvailableLoras() {
-    try {
-        const resp = await fetch('/api/model/loras', { headers: getAuthHeaders() });
-        const data = await resp.json();
-        if (data.success) {
-            availableLoras = data.loras;
-            updateLoraSelect();
-        }
-    } catch (err) {
-        console.warn('Could not load LoRA models', err);
-    }
-}
-
-// Update LoRA select dropdown
-function updateLoraSelect() {
-    const loraSelect = document.getElementById('loraSelect');
-    const loraCount = document.getElementById('loraCount');
-    
-    if (!loraSelect) return;
-    
-    loraSelect.innerHTML = '';
-    
-    if (availableLoras.length === 0) {
-        loraSelect.innerHTML = '<option value="">No LoRA models found</option>';
-        if (loraCount) loraCount.textContent = '0 LoRA models available';
-    } else {
-        // Add default option
-        const defaultOption = document.createElement('option');
-        defaultOption.value = '';
-        defaultOption.textContent = '-- Select a LoRA --';
-        loraSelect.appendChild(defaultOption);
-        
-        // Add LoRA options
-        availableLoras.forEach(lora => {
-            const option = document.createElement('option');
-            option.value = lora;
-            option.textContent = lora;
-            loraSelect.appendChild(option);
-        });
-        
-        if (loraCount) loraCount.textContent = `${availableLoras.length} LoRA model${availableLoras.length !== 1 ? 's' : ''} available`;
-    }
-}
-
-// Toggle LoRA settings visibility
-function toggleLoraSettings() {
-    const useLoraToggle = document.getElementById('useLoraToggle');
-    const loraSelectionGroup = document.getElementById('loraSelectionGroup');
-    
-    if (useLoraToggle && loraSelectionGroup) {
-        if (useLoraToggle.checked) {
-            loraSelectionGroup.style.display = 'block';
-        } else {
-            loraSelectionGroup.style.display = 'none';
-        }
-    }
+  } catch (error) {
+    console.error("Failed to load history:", error);
+  }
 }
 
 // Load current user's profile (fname/lname)
@@ -691,27 +514,30 @@ async function saveUserProfile() {
 
 // Update history list in sidebar
 function updateHistoryList() {
-    const historyList = document.getElementById('historyList');
-    
-    if (conversationHistory.length === 0) {
-        historyList.innerHTML = '<p style="color: var(--text-secondary); font-size: 13px; padding: 12px;">No history yet</p>';
-        return;
-    }
-    
-    historyList.innerHTML = conversationHistory
-        .slice(-10)
-        .reverse()
-        .map((item, index) => {
-            const text = item.user || item[0] || 'Untitled';
-            return `<button class="history-item" onclick="viewHistoryItem(${index})">${escapeHtml(text.substring(0, 40))}${text.length > 40 ? '...' : ''}</button>`;
-        })
-        .join('');
+  const historyList = document.getElementById("historyList");
+
+  if (conversationHistory.length === 0) {
+    historyList.innerHTML =
+      '<p style="color: var(--text-secondary); font-size: 13px; padding: 12px;">No history yet</p>';
+    return;
+  }
+
+  historyList.innerHTML = conversationHistory
+    .slice(-10)
+    .reverse()
+    .map((item, index) => {
+      const text = item.user || item[0] || "Untitled";
+      return `<button class="history-item" onclick="viewHistoryItem(${index})">${escapeHtml(
+        text.substring(0, 40)
+      )}${text.length > 40 ? "..." : ""}</button>`;
+    })
+    .join("");
 }
 
 // View history item
 function viewHistoryItem(index) {
-    // This would load a previous conversation
-    console.log('View history item:', index);
+  // This would load a previous conversation
+  console.log("View history item:", index);
 }
 
 // Utility: Escape HTML
