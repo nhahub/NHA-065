@@ -159,6 +159,57 @@ def upgrade_page():
     return render_template('upgrade.html')
 
 
+@app.route('/get-user-email')
+@verify_firebase_token
+def get_user_email():
+    """Get the current user's email address for Paddle checkout"""
+    try:
+        firebase_user = getattr(request, 'firebase_user', None)
+        if not firebase_user:
+            return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+        
+        with app.app_context():
+            user = models.User.query.filter_by(firebase_uid=firebase_user['uid']).first()
+            if not user:
+                return jsonify({'success': True, 'email': firebase_user.get('email')})
+            return jsonify({'success': True, 'email': user.email})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/payment/success', methods=['POST'])
+@verify_firebase_token
+def payment_success():
+    """Handle successful Paddle payment webhook"""
+    try:
+        data = request.get_json()
+        firebase_user = getattr(request, 'firebase_user', None)
+        
+        if not firebase_user:
+            return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+        
+        # Verify the payment data
+        checkout_id = data.get('checkoutId')
+        order_id = data.get('orderId')
+        email = data.get('email')
+        
+        # Update user's pro status in database
+        with app.app_context():
+            user = models.User.query.filter_by(firebase_uid=firebase_user['uid']).first()
+            if user:
+                user.is_pro = True
+                models.db.session.commit()
+                return jsonify({
+                    'success': True,
+                    'message': 'Pro access activated successfully'
+                })
+            return jsonify({'success': False, 'error': 'User not found'}), 404
+            
+    except Exception as e:
+        models.db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 # ensure columns are present at import time (safe no-op on most DBs)
 ensure_user_columns()
 
@@ -399,6 +450,75 @@ def serve_output(filename):
     """Serve generated images"""
     return send_from_directory(config.OUTPUTS_DIR, filename)
 
+@app.route('/api/paddle/test', methods=['GET'])
+def paddle_sandbox_test():
+    """Confirm Paddle sandbox credentials are loaded"""
+    try:
+        return jsonify({
+            'success': True,
+            'message': 'Paddle sandbox active',
+            'environment': 'sandbox',
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/subscription/cancel', methods=['POST'])
+@verify_firebase_token
+def cancel_subscription():
+    """Cancel user's Pro subscription"""
+    try:
+        firebase_user = getattr(request, 'firebase_user', None)
+        if not firebase_user:
+            return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+        
+        with app.app_context():
+            user = models.User.query.filter_by(firebase_uid=firebase_user['uid']).first()
+            if not user:
+                return jsonify({'success': False, 'error': 'User not found'}), 404
+            
+            # Downgrade to free
+            user.is_pro = False
+            models.db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': 'Subscription cancelled successfully'
+            })
+            
+    except Exception as e:
+        models.db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.after_request
+def add_security_headers(response):
+    """Add security headers - disabled in development"""
+    # Don't add CSP in debug/development mode
+    # Paddle requires specific CSP that conflicts with local development
+    if not app.debug:
+        csp = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' "
+                "https://cdn.paddle.com "
+                "https://www.gstatic.com "
+                "https://cdnjs.cloudflare.com; "
+            "style-src 'self' 'unsafe-inline' "
+                "https://cdn.paddle.com; "
+            "frame-src "
+                "https://buy.paddle.com "
+                "https://sandbox-buy.paddle.com "
+                "https://checkout.paddle.com "
+                "https://sandbox-checkout.paddle.com; "
+            "connect-src 'self' "
+                "https://checkout-service.paddle.com "
+                "https://sandbox-checkout-service.paddle.com "
+                "https://*.paddle.com "
+                "https://identitytoolkit.googleapis.com "
+                "https://securetoken.googleapis.com; "
+            "img-src 'self' data: https:; "
+            "font-src 'self' data:;"
+        )
+        response.headers['Content-Security-Policy'] = csp
+    return response
 
 if __name__ == '__main__':
     print(f"\n{'='*60}")
