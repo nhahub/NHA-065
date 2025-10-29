@@ -9,7 +9,6 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Favicon served from top-level photos/ folder -->
     <link rel="icon" href="{{ url_for('serve_photos', filename='favicon.ico') }}" type="image/x-icon">
     <link rel="shortcut icon" href="{{ url_for('serve_photos', filename='favicon.ico') }}" type="image/x-icon">
 </head>
@@ -28,7 +27,7 @@
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <div class="logo">
-                <img src="{{ url_for('serve_photos', filename='zypher.jpeg') }}" alt="Zypher AI" class="logo-image">
+                <span class="logo-icon">🎨</span>
                 <span class="logo-text">Zypher AI</span>
             </div>
             <button class="new-chat-btn" onclick="newChat()">
@@ -42,15 +41,7 @@
 
         <div class="sidebar-content">
             <div class="history-section">
-                <div class="history-header">
-                    <h3>Recent</h3>
-                    <button class="clear-history-btn" onclick="clearAllHistory()" title="Clear all history">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="3 6 5 6 21 6"></polyline>
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                        </svg>
-                    </button>
-                </div>
+                <h3>Recent</h3>
                 <div id="historyList" class="history-list">
                     <!-- History items will be populated here -->
                 </div>
@@ -103,33 +94,33 @@
             <div class="welcome-screen" id="welcomeScreen">
                 <div class="welcome-content">
                     <h1>
-                        <img src="{{ url_for('serve_photos', filename='zypher.jpeg') }}" alt="Zypher AI" class="logo-icon-large">
+                        <span class="logo-icon-large">🎨</span>
                         Zypher AI Logo Generator
                     </h1>
                     <p class="subtitle">Powered by Flux Schnell - Create stunning logos with AI</p>
 
                     <div class="example-prompts">
-                        <h3>Try asking me:</h3>
+                        <h3>Try these prompts:</h3>
                         <div class="prompt-cards">
                             <button class="prompt-card" onclick="usePrompt(this)">
-                                <span class="prompt-icon">�</span>
-                                <span class="prompt-text">What kind of logos can you create for me?</span>
-                            </button>
-                            <button class="prompt-card" onclick="usePrompt(this)">
                                 <span class="prompt-icon">🚀</span>
-                                <span class="prompt-text">A modern tech startup logo with a rocket symbol, gradient blue to purple, minimalist design</span>
+                                <span class="prompt-text">A modern tech startup logo with a rocket symbol, gradient blue
+                                    to purple, minimalist design</span>
                             </button>
                             <button class="prompt-card" onclick="usePrompt(this)">
                                 <span class="prompt-icon">🌿</span>
-                                <span class="prompt-text">An eco-friendly brand logo featuring a green leaf, circular design, natural colors, organic feel</span>
+                                <span class="prompt-text">An eco-friendly brand logo featuring a green leaf, circular
+                                    design, natural colors, organic feel</span>
                             </button>
                             <button class="prompt-card" onclick="usePrompt(this)">
                                 <span class="prompt-icon">⚡</span>
-                                <span class="prompt-text">A fintech company logo with geometric shapes, electric blue and gold, professional and trustworthy</span>
+                                <span class="prompt-text">A fintech company logo with geometric shapes, electric blue
+                                    and gold, professional and trustworthy</span>
                             </button>
                             <button class="prompt-card" onclick="usePrompt(this)">
                                 <span class="prompt-icon">🎮</span>
-                                <span class="prompt-text">A gaming studio logo with bold typography, neon colors, futuristic and energetic style</span>
+                                <span class="prompt-text">A gaming studio logo with bold typography, neon colors,
+                                    futuristic and energetic style</span>
                             </button>
                         </div>
                     </div>
@@ -213,13 +204,8 @@
 
                 <!-- Text Input -->
                 <div class="input-wrapper">
-                    <textarea 
-                        id="promptInput" 
-                        placeholder="Describe your logo in detail..." 
-                        rows="1"
-                        onkeydown="handleKeyPress(event)"
-                        oninput="autoResize(this)"
-                    ></textarea>
+                    <textarea id="promptInput" placeholder="Describe your logo in detail..." rows="1"
+                        onkeydown="handleKeyPress(event)" oninput="autoResize(this)"></textarea>
                     <button class="send-btn" id="sendBtn" onclick="sendMessage()">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2">
@@ -280,22 +266,11 @@
                     <h3 class="settings-section-title">Generation Settings</h3>
                     <div class="setting-group">
                         <label class="setting-label checkbox-label">
-                            <input type="checkbox" id="useLoraToggle" class="settings-checkbox" onchange="toggleLoraSettings()">
+                            <input type="checkbox" id="useLoraToggle" class="settings-checkbox">
                             <span class="checkmark"></span>
                             Use LoRA Fine-tuned Model
                         </label>
                         <p class="setting-description">Enable your custom trained weights for specialized styles</p>
-                    </div>
-
-                    <!-- LoRA Selection (shown when LoRA is enabled) -->
-                    <div class="setting-group" id="loraSelectionGroup" style="display: none;">
-                        <label for="loraSelect" class="setting-label">
-                            Select LoRA Model:
-                        </label>
-                        <select id="loraSelect" class="settings-select">
-                            <option value="">Loading LoRAs...</option>
-                        </select>
-                        <p class="setting-description" id="loraCount">0 LoRA models available</p>
                     </div>
 
                     <div class="setting-group slider-group">

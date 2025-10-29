@@ -19,7 +19,6 @@ import config
 from utils.model_manager import ModelManager
 from utils.chat_history import ChatHistoryManager
 from utils.firebase_auth import verify_firebase_token, initialize_firebase
-from utils.mistral_chat import MistralChatManager
 import models
 
 
@@ -47,7 +46,6 @@ with app.app_context():
 # Initialize managers
 model_manager = ModelManager()
 chat_history = ChatHistoryManager()
-mistral_chat = MistralChatManager()
 
 
 @app.route('/')
@@ -216,262 +214,6 @@ def payment_success():
 ensure_user_columns()
 
 
-@app.route('/api/chat', methods=['POST'])
-@verify_firebase_token
-def chat_with_ai():
-    """
-    Chat with Mistral AI - handles both normal conversation and image generation detection
-    Endpoint: POST /api/chat
-    Content-Type: application/json
-    
-    JSON Body: {
-        "message": "string",
-        "conversation_history": [{"role": "user/assistant", "content": "..."}] (optional)
-    }
-    
-    Returns: {
-        "success": true,
-        "response": "text response",
-        "is_image_request": bool,
-        "image_prompt": "enhanced prompt if image request" (optional),
-        "image": "base64 image" (optional, if auto-generated),
-        "metadata": {...} (optional, if image generated)
-    }
-    """
-    try:
-        data = request.json
-        user_message = data.get('message', '').strip()
-        conversation_history = data.get('conversation_history', [])
-        
-        if not user_message:
-            return jsonify({
-                'success': False,
-                'error': 'Message is required'
-            }), 400
-        
-        # Get authenticated user
-        firebase_user = getattr(request, 'firebase_user', None)
-        if not firebase_user:
-            return jsonify({'success': False, 'error': 'Authentication required'}), 401
-        
-        uid = firebase_user.get('uid')
-        email = firebase_user.get('email')
-        
-        # Get or create user record
-        with app.app_context():
-            user = models.User.query.filter_by(firebase_uid=uid).first()
-            if not user:
-                user = models.User(firebase_uid=uid, email=email or f'user_{uid}@unknown')
-                models.db.session.add(user)
-                models.db.session.commit()
-        
-        # Chat with Mistral AI
-        response_text, is_image_request, image_prompt = mistral_chat.chat(
-            user_message, 
-            conversation_history
-        )
-        
-        # If Mistral detected an image generation request
-        if is_image_request and image_prompt:
-            # Check user limits
-            with app.app_context():
-                user = models.User.query.filter_by(firebase_uid=uid).first()
-                
-                # Reset prompt count if needed
-                try:
-                    now = datetime.utcnow()
-                    needs_reset = False
-                    last = user.last_prompt_reset
-                    if not last:
-                        needs_reset = True
-                    else:
-                        try:
-                            if isinstance(last, str):
-                                last_dt = datetime.fromisoformat(last)
-                            else:
-                                last_dt = last
-                            if (now - last_dt).total_seconds() >= 24 * 3600:
-                                needs_reset = True
-                        except Exception:
-                            needs_reset = True
-                    
-                    if needs_reset:
-                        user.prompt_count = 0
-                        user.last_prompt_reset = now
-                        models.db.session.commit()
-                except Exception:
-                    pass
-                
-                # Check limits
-                if not user.is_pro and (user.prompt_count or 0) >= 5:
-                    return jsonify({
-                        'success': True,
-                        'response': "🎨 I'd love to help you create that! However, you've reached your free tier limit of 5 image generations. Upgrade to Pro for unlimited generations! [Upgrade](/upgrade)",
-                        'is_image_request': False,
-                        'needs_upgrade': True
-                    })
-            
-            # Generate a friendly, personalized acknowledgment using Mistral
-            friendly_response = mistral_chat.generate_acknowledgment(user_message)
-            
-            # Return immediate acknowledgment with generation status
-            # The frontend will display "Generating your logo..." message
-            return jsonify({
-                'success': True,
-                'response': friendly_response,
-                'is_image_request': True,
-                'image_prompt': image_prompt,
-                'status': 'generating',
-                'needs_generation': True
-            })
-        
-        # Normal chat response (no image generation)
-        return jsonify({
-            'success': True,
-            'response': response_text,
-            'is_image_request': False
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
-@app.route('/api/generate-from-chat', methods=['POST'])
-@verify_firebase_token
-def generate_from_chat():
-    """
-    Generate image from chat-detected prompt
-    This is called after the user gets the "Generating..." message
-    """
-    try:
-        data = request.json
-        image_prompt = data.get('image_prompt', '').strip()
-        
-        if not image_prompt:
-            return jsonify({
-                'success': False,
-                'error': 'Image prompt is required'
-            }), 400
-        
-        # Get generation settings from request (with defaults)
-        use_lora = data.get('use_lora', False)
-        lora_filename = data.get('lora_filename', None)
-        num_steps = data.get('num_steps', 4)
-        width = data.get('width', 1024)
-        height = data.get('height', 1024)
-        use_ip_adapter = data.get('use_ip_adapter', False)
-        ip_adapter_scale = data.get('ip_adapter_scale', 0.5)
-        
-        # Get authenticated user
-        firebase_user = getattr(request, 'firebase_user', None)
-        if not firebase_user:
-            return jsonify({'success': False, 'error': 'Authentication required'}), 401
-        
-        uid = firebase_user.get('uid')
-        
-        # Get user record
-        with app.app_context():
-            user = models.User.query.filter_by(firebase_uid=uid).first()
-            if not user:
-                return jsonify({'success': False, 'error': 'User not found'}), 404
-        
-        # Generate the image with user settings
-        try:
-            image = model_manager.generate_image(
-                prompt=image_prompt,
-                use_lora=use_lora,
-                lora_filename=lora_filename,
-                num_inference_steps=num_steps,
-                width=width,
-                height=height
-            )
-            
-            # Save image
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"logo_{timestamp}.{config.IMAGE_FORMAT.lower()}"
-            image_path = os.path.join(config.OUTPUTS_DIR, filename)
-            
-            if config.SAVE_GENERATED_IMAGES:
-                image.save(image_path, format=config.IMAGE_FORMAT)
-            
-            # Convert to base64
-            buffered = io.BytesIO()
-            image.save(buffered, format=config.IMAGE_FORMAT)
-            img_str = base64.b64encode(buffered.getvalue()).decode()
-            
-            # Save to history
-            try:
-                chat_history.add_entry(image_prompt, image_path, False)
-            except Exception:
-                pass
-            
-            # Save to database
-            try:
-                with app.app_context():
-                    entry = models.ChatHistory(user_id=user.id, prompt=image_prompt, image_path=image_path)
-                    models.db.session.add(entry)
-                    user.prompt_count = (user.prompt_count or 0) + 1
-                    models.db.session.commit()
-            except Exception:
-                models.db.session.rollback()
-            
-            # Build model description
-            model_parts = []
-            if use_lora:
-                lora_name = lora_filename or "Custom LoRA"
-                model_parts.append(f"LoRA: {lora_name}")
-            else:
-                model_parts.append("Base Flux Schnell")
-            if use_ip_adapter:
-                model_parts.append(f"IP-Adapter ({ip_adapter_scale:.1%})")
-            model_desc = " + ".join(model_parts)
-            
-            # Return success with image
-            return jsonify({
-                'success': True,
-                'image': f"data:image/{config.IMAGE_FORMAT.lower()};base64,{img_str}",
-                'filename': filename,
-                'path': image_path,
-                'metadata': {
-                    'model': model_desc,
-                    'lora_used': lora_filename if use_lora else None,
-                    'steps': num_steps,
-                    'dimensions': f'{width}×{height}',
-                    'ip_adapter': use_ip_adapter,
-                    'ip_adapter_scale': ip_adapter_scale if use_ip_adapter else None,
-                    'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }
-            })
-            
-        except Exception as e:
-            return jsonify({
-                'success': False,
-                'error': str(e)
-            }), 500
-            
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-        
-        # Normal chat response (no image generation)
-        return jsonify({
-            'success': True,
-            'response': response_text,
-            'is_image_request': False
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
 @app.route('/api/generate', methods=['POST'])
 @verify_firebase_token
 def generate_logo():
@@ -497,7 +239,6 @@ def generate_logo():
             # Form data with file upload
             prompt = request.form.get('prompt', '').strip()
             use_lora = request.form.get('use_lora', 'false').lower() == 'true'
-            lora_filename = request.form.get('lora_filename', None)
             num_steps = int(request.form.get('num_steps', 4))
             width = int(request.form.get('width', 1024))
             height = int(request.form.get('height', 1024))
@@ -515,7 +256,6 @@ def generate_logo():
             data = request.json
             prompt = data.get('prompt', '').strip()
             use_lora = data.get('use_lora', False)
-            lora_filename = data.get('lora_filename', None)
             num_steps = data.get('num_steps', 4)
             width = data.get('width', 1024)
             height = data.get('height', 1024)
@@ -586,7 +326,6 @@ def generate_logo():
         image = model_manager.generate_image(
             prompt=prompt,
             use_lora=use_lora,
-            lora_filename=lora_filename,
             reference_image=reference_image if use_ip_adapter else None,
             ip_adapter_scale=ip_adapter_scale if use_ip_adapter else 0.5,
             num_inference_steps=num_steps,
@@ -628,8 +367,7 @@ def generate_logo():
         # Build model description
         model_parts = []
         if use_lora:
-            lora_name = lora_filename or "Custom LoRA"
-            model_parts.append(f"LoRA: {lora_name}")
+            model_parts.append("LoRA Fine-tuned")
         else:
             model_parts.append("Base Flux Schnell")
         if use_ip_adapter:
@@ -644,7 +382,6 @@ def generate_logo():
             'path': image_path,
             'metadata': {
                 'model': model_desc,
-                'lora_used': lora_filename if use_lora else None,
                 'steps': num_steps,
                 'dimensions': f"{width}×{height}",
                 'ip_adapter': use_ip_adapter,
@@ -661,116 +398,15 @@ def generate_logo():
 
 
 @app.route('/api/history', methods=['GET'])
-@verify_firebase_token
 def get_history():
-    """Get user's chat history from database"""
+    """Get chat history"""
     try:
-        firebase_user = getattr(request, 'firebase_user', None)
-        if not firebase_user:
-            return jsonify({'success': False, 'error': 'Authentication required'}), 401
-        
-        uid = firebase_user.get('uid')
-        
-        with app.app_context():
-            user = models.User.query.filter_by(firebase_uid=uid).first()
-            if not user:
-                return jsonify({'success': True, 'history': []})
-            
-            # Get all chat history for this user, ordered by most recent first
-            history_entries = models.ChatHistory.query.filter_by(user_id=user.id)\
-                .order_by(models.ChatHistory.created_at.desc())\
-                .limit(50)\
-                .all()
-            
-            history = []
-            for entry in history_entries:
-                history.append({
-                    'id': entry.id,
-                    'prompt': entry.prompt,
-                    'image_path': entry.image_path,
-                    'timestamp': entry.created_at.isoformat() if entry.created_at else None,
-                    'preview': entry.prompt[:50] + ('...' if len(entry.prompt) > 50 else '')
-                })
-            
-            return jsonify({
-                'success': True,
-                'history': history
-            })
-    except Exception as e:
+        history = chat_history.format_for_display()
         return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
-@app.route('/api/history/<int:history_id>', methods=['GET'])
-@verify_firebase_token
-def get_history_item(history_id):
-    """Get a specific chat history item"""
-    try:
-        firebase_user = getattr(request, 'firebase_user', None)
-        if not firebase_user:
-            return jsonify({'success': False, 'error': 'Authentication required'}), 401
-        
-        uid = firebase_user.get('uid')
-        
-        with app.app_context():
-            user = models.User.query.filter_by(firebase_uid=uid).first()
-            if not user:
-                return jsonify({'success': False, 'error': 'User not found'}), 404
-            
-            # Get the specific history entry, ensuring it belongs to this user
-            entry = models.ChatHistory.query.filter_by(id=history_id, user_id=user.id).first()
-            if not entry:
-                return jsonify({'success': False, 'error': 'History item not found'}), 404
-            
-            return jsonify({
-                'success': True,
-                'item': {
-                    'id': entry.id,
-                    'prompt': entry.prompt,
-                    'image_path': entry.image_path,
-                    'timestamp': entry.created_at.isoformat() if entry.created_at else None
-                }
-            })
+            'success': True,
+            'history': history
+        })
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
-@app.route('/api/history/<int:history_id>', methods=['DELETE'])
-@verify_firebase_token
-def delete_history_item(history_id):
-    """Delete a specific chat history item"""
-    try:
-        firebase_user = getattr(request, 'firebase_user', None)
-        if not firebase_user:
-            return jsonify({'success': False, 'error': 'Authentication required'}), 401
-        
-        uid = firebase_user.get('uid')
-        
-        with app.app_context():
-            user = models.User.query.filter_by(firebase_uid=uid).first()
-            if not user:
-                return jsonify({'success': False, 'error': 'User not found'}), 404
-            
-            # Get the specific history entry, ensuring it belongs to this user
-            entry = models.ChatHistory.query.filter_by(id=history_id, user_id=user.id).first()
-            if not entry:
-                return jsonify({'success': False, 'error': 'History item not found'}), 404
-            
-            # Delete the entry
-            models.db.session.delete(entry)
-            models.db.session.commit()
-            
-            return jsonify({
-                'success': True,
-                'message': 'History item deleted successfully'
-            })
-    except Exception as e:
-        models.db.session.rollback()
         return jsonify({
             'success': False,
             'error': str(e)
@@ -778,31 +414,15 @@ def delete_history_item(history_id):
 
 
 @app.route('/api/history/clear', methods=['POST'])
-@verify_firebase_token
 def clear_history():
-    """Clear all chat history for the user"""
+    """Clear chat history"""
     try:
-        firebase_user = getattr(request, 'firebase_user', None)
-        if not firebase_user:
-            return jsonify({'success': False, 'error': 'Authentication required'}), 401
-        
-        uid = firebase_user.get('uid')
-        
-        with app.app_context():
-            user = models.User.query.filter_by(firebase_uid=uid).first()
-            if not user:
-                return jsonify({'success': False, 'error': 'User not found'}), 404
-            
-            # Delete all history entries for this user
-            models.ChatHistory.query.filter_by(user_id=user.id).delete()
-            models.db.session.commit()
-            
-            return jsonify({
-                'success': True,
-                'message': 'All history cleared successfully'
-            })
+        chat_history.clear_history()
+        return jsonify({
+            'success': True,
+            'message': 'History cleared successfully'
+        })
     except Exception as e:
-        models.db.session.rollback()
         return jsonify({
             'success': False,
             'error': str(e)
@@ -817,25 +437,6 @@ def model_status():
         return jsonify({
             'success': True,
             'model': info
-        })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
-@app.route('/api/model/loras', methods=['GET'])
-def list_loras():
-    """Get list of available LoRA models"""
-    try:
-        loras = model_manager.get_available_loras()
-        current_lora = model_manager.current_lora
-        return jsonify({
-            'success': True,
-            'loras': loras,
-            'current_lora': current_lora,
-            'count': len(loras)
         })
     except Exception as e:
         return jsonify({
