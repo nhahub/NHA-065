@@ -1,60 +1,238 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Upgrade to Pro - Zypher AI</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <!-- Favicon - Zypher Logo -->
-    <link rel="icon" href="{{ url_for('serve_photos', filename='zypher.jpeg') }}" type="image/jpeg">
-    <link rel="shortcut icon" href="{{ url_for('serve_photos', filename='zypher.jpeg') }}" type="image/jpeg">
-    <link rel="apple-touch-icon" href="{{ url_for('serve_photos', filename='zypher.jpeg') }}">
+    <!-- Favicon served from top-level photos/ folder -->
+    <link rel="icon" href="{{ url_for('serve_photos', filename='favicon.ico') }}" type="image/x-icon">
+    <link rel="shortcut icon" href="{{ url_for('serve_photos', filename='favicon.ico') }}" type="image/x-icon">
     <style>
     main{
     width: 100%;
     }
     </style>
 </head>
+
 <body>
-    <main style="display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;background:var(--bg-primary);">
-        <div class="upgrade-panel" style="max-width:980px;width:100%;background:var(--bg-secondary);padding:28px;border-radius:12px;border:1px solid var(--border-color);">
-            <section class="upgrade-hero">
-                <h1>Upgrade to Pro</h1>
-                <p>Unlock unlimited prompts, priority generation, higher rate limits, and early access to new models.</p>
-            </section>
+    <div class="upgrade-container">
+        <a href="/" class="back-link">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M19 12H5M12 19l-7-7 7-7" />
+            </svg>
+            Back to Home
+        </a>
 
-            <section class="plan-grid" aria-label="Plans">
-                <article class="plan-card" id="free">
-                    <h3>Free</h3>
-                    <div class="price">Free</div>
-                    <ul>
-                        <li>Max prompts: 5</li>
-                        <li>Basic generation features</li>
-                        <li>Community support</li>
-                    </ul>
-                    <div style="margin-top:auto;">
-                        <a class="btn-ghost" href="/" title="Continue on Free">Continue (Free)</a>
-                    </div>
-                </article>
-
-                <article class="plan-card pro" id="pro">
-                    <h3>Pro</h3>
-                    <div class="price">Unlimited</div>
-                    <ul>
-                        <li>Unlimited prompts</li>
-                        <li>Priority queue & higher rate limits</li>
-                        <li>Early access to new models and features</li>
-                    </ul>
-                    <div style="margin-top:auto;">
-                        <a class="btn-primary" href="#" title="Contact to upgrade">Contact to upgrade</a>
-                    </div>
-                </article>
-            </section>
-
-            <section style="margin-top:18px;color:var(--text-secondary);">
-                <p>If you'd like to enable Pro for your account in this demo, contact the site admin or implement a payment flow (Stripe, Paddle, etc.).</p>
-            </section>
+        <div class="upgrade-header">
+            <h1>Upgrade to Pro</h1>
+            <p class="upgrade-subtitle">Unlock unlimited prompts, faster responses, and early access to new models</p>
         </div>
-    </main>
+
+        <div class="plans-grid">
+            <!-- Free Plan -->
+            <div class="plan-card">
+                <h3>Free</h3>
+                <div class="plan-price">$0</div>
+                <ul class="plan-features">
+                    <li>5 prompts per day</li>
+                    <li>Basic generation</li>
+                    <li>Community support</li>
+                    <li>Standard quality</li>
+                </ul>
+                <button class="btn btn-ghost" onclick="window.location.href='/'">Continue Free</button>
+            </div>
+
+            <!-- Pro Plan -->
+            <div class="plan-card pro">
+                <div class="plan-badge">Most Popular</div>
+                <h3>Pro ⭐</h3>
+                <div class="plan-price">$10<span>/month</span></div>
+                <ul class="plan-features">
+                    <li>Unlimited prompts</li>
+                    <li>Priority processing</li>
+                    <li>Early access to features</li>
+                    <li>Premium support</li>
+                    <li>Advanced models</li>
+                    <li>No daily limits</li>
+                </ul>
+                <div class="email-input-group">
+                    <label>Your Email:</label>
+                    <input type="email" id="userEmail" placeholder="Loading..." readonly>
+                </div>
+                <button class="btn btn-primary" id="upgradeBtn" onclick="openMockCheckout()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path
+                            d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z">
+                        </path>
+                    </svg>
+                    Upgrade to Pro
+                </button>
+            </div>
+        </div>
+
+        <div class="dev-notice">
+            <strong>🧪 Development Mode:</strong> This is a mock payment system for testing.
+            Click "Upgrade to Pro" to simulate a successful payment and test Pro features.
+        </div>
+
+        <div class="info-notice">
+            <strong>📝 Note:</strong> Real Paddle integration requires HTTPS domain (not localhost).
+            This mock version allows you to test Pro features during development.
+        </div>
+    </div>
+
+    <!-- Mock Checkout Modal -->
+    <div id="checkoutModal" class="checkout-modal">
+        <div class="checkout-modal-content">
+            <h2>🎉 Mock Payment</h2>
+            <p>This is a <strong>development-only</strong> mock payment system.</p>
+            <p>In production, this will be replaced with real Paddle checkout.</p>
+
+            <div class="checkout-details">
+                <strong>Simulating payment for:</strong><br>
+                <span class="checkout-email" id="checkoutEmail"></span>
+                <br><br>
+                <strong>Amount:</strong> $10.00/month
+            </div>
+
+            <div class="modal-buttons">
+                <button class="btn btn-primary" onclick="completeMockPayment()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    Simulate Successful Payment
+                </button>
+                <button class="btn btn-ghost" onclick="closeMockCheckout()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+
+    <script>
+        let firebaseUser = null;
+
+        // Initialize Firebase
+        async function initFirebase() {
+            try {
+                const resp = await fetch('/api/firebase-config');
+                const data = await resp.json();
+
+                if (data && data.success && data.config && data.config.apiKey) {
+                    firebase.initializeApp(data.config);
+
+                    firebase.auth().onAuthStateChanged(user => {
+                        if (user) {
+                            firebaseUser = user;
+                            document.getElementById('userEmail').value = user.email;
+
+                            // Get email from backend
+                            user.getIdToken().then(token => {
+                                fetch('/get-user-email', {
+                                    headers: { 'Authorization': 'Bearer ' + token }
+                                })
+                                    .then(r => r.json())
+                                    .then(data => {
+                                        if (data.success && data.email) {
+                                            document.getElementById('userEmail').value = data.email;
+                                        }
+                                    })
+                                    .catch(err => console.error('Error fetching email:', err));
+                            });
+                        } else {
+                            // Not authenticated, redirect to login
+                            window.location.href = '/login';
+                        }
+                    });
+                } else {
+                    console.error('Firebase config not available');
+                }
+            } catch (error) {
+                console.error('Error initializing Firebase:', error);
+            }
+        }
+
+        function openMockCheckout() {
+            const email = document.getElementById('userEmail').value;
+
+            if (!email || email === 'Loading...') {
+                alert('Please wait for email to load');
+                return;
+            }
+
+            if (!firebaseUser) {
+                alert('Please sign in first');
+                window.location.href = '/login';
+                return;
+            }
+
+            document.getElementById('checkoutEmail').textContent = email;
+            document.getElementById('checkoutModal').classList.add('show');
+        }
+
+        function closeMockCheckout() {
+            document.getElementById('checkoutModal').classList.remove('show');
+        }
+
+        async function completeMockPayment() {
+            const email = document.getElementById('userEmail').value;
+            const upgradeBtn = document.getElementById('upgradeBtn');
+
+            if (!firebaseUser) {
+                alert('Not authenticated');
+                return;
+            }
+            // Disable button and show loading
+            upgradeBtn.disabled = true;
+            upgradeBtn.textContent = 'Processing...';
+            console.log('Processing mock payment for:', email);
+            try {
+                const token = await firebaseUser.getIdToken();
+
+                const response = await fetch('/payment/success', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify({
+                        checkoutId: 'mock_' + Date.now(),
+                        orderId: 'order_' + Date.now(),
+                        email: email,
+                        mock: true
+                    })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    closeMockCheckout();
+
+                    // Show success message
+                    alert('🎉 Pro activated successfully!\n\nYou now have unlimited prompts and access to all Pro features.');
+
+                    // Redirect to home
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 500);
+                } else {
+                    alert('Error: ' + (result.error || 'Unknown error occurred'));
+                    upgradeBtn.disabled = false;
+                    upgradeBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"></path></svg> Upgrade to Pro';
+                }
+            } catch (err) {
+                console.error('Payment error:', err);
+                alert('Error activating Pro. Please check console and try again.');
+                upgradeBtn.disabled = false;
+                upgradeBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"></path></svg> Upgrade to Pro';
+            }
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', initFirebase);
+    </script>
 </body>
+
 </html>
