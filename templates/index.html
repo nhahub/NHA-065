@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- AOS Animation Library -->
+    <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Zypher AI - Logo Generator</title>
@@ -389,5 +392,15 @@
     </script>
 
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <!-- AOS JS -->
+<script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+
+<script>
+  AOS.init({
+    duration: 800,  /* animation speed */
+    once: true,     /* only animate once */
+  });
+</script>
+
 </body>
 </html>
