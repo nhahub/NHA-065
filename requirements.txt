@@ -35,3 +35,4 @@ requests>=2.31.0
 # authentication and database
 firebase_admin
 flask_sqlalchemy
+sentencepiece

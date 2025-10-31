@@ -11,6 +11,8 @@ from PIL import Image
 import io
 import base64
 import json
+from models import db, User
+from utils.firebase_auth import verify_firebase_token, get_request_uid
 
 # Add utils to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -154,38 +156,59 @@ def update_user_profile():
         models.db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
 
-
 @app.route('/upgrade')
 def upgrade_page():
     """Render a simple upgrade page describing Free vs Pro plans."""
     return render_template('upgrade.html')
 
+@app.route('/get-user-email', methods=['GET'])
+@verify_firebase_token
+def get_user_email():
+    try:
+        uid = get_request_uid()
+        user = models.User.query.filter_by(firebase_uid=uid).first()
+        if not user:
+            # Fallback for new users not yet in DB
+            firebase_user = getattr(request, 'firebase_user', {})
+            return jsonify({'success': True, 'email': firebase_user.get('email', 'Not found')})
+        
+        return jsonify({'success': True, 'email': user.email})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
-# ensure columns are present at import time (safe no-op on most DBs)
-ensure_user_columns()
-
+@app.route('/payment/success', methods=['POST'])
+@verify_firebase_token
+def payment_success():
+    try:
+        firebase_user = getattr(request, 'firebase_user', None)
+        if not firebase_user:
+            return jsonify({'success': False, 'message': 'Authentication required'}), 401
+        
+        uid = firebase_user.get('uid')
+        email = firebase_user.get('email', f'user_{uid}@unknown')
+        
+        with app.app_context():
+            user = models.User.query.filter_by(firebase_uid=uid).first()
+            if not user:
+                user = models.User(firebase_uid=uid, email=email)
+                db.session.add(user)
+                db.session.commit()  # Commit creation before updating is_pro
+            
+            user.is_pro = True
+            db.session.commit()
+        
+        return jsonify({'success': True, 'message': 'Upgrade successful'})
+    
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error during payment success: {e}")
+        return jsonify({'success': False, 'message': 'Internal server error'}), 500
 
 @app.route('/api/chat', methods=['POST'])
 @verify_firebase_token
 def chat_with_ai():
     """
     Chat with Mistral AI - handles both normal conversation and image generation detection
-    Endpoint: POST /api/chat
-    Content-Type: application/json
-    
-    JSON Body: {
-        "message": "string",
-        "conversation_history": [{"role": "user/assistant", "content": "..."}] (optional)
-    }
-    
-    Returns: {
-        "success": true,
-        "response": "text response",
-        "is_image_request": bool,
-        "image_prompt": "enhanced prompt if image request" (optional),
-        "image": "base64 image" (optional, if auto-generated),
-        "metadata": {...} (optional, if image generated)
-    }
     """
     try:
         data = request.json
@@ -213,6 +236,33 @@ def chat_with_ai():
                 user = models.User(firebase_uid=uid, email=email or f'user_{uid}@unknown')
                 models.db.session.add(user)
                 models.db.session.commit()
+            
+            # Reset prompt count check BEFORE checking limits
+            try:
+                now = datetime.utcnow()
+                needs_reset = False
+                last = user.last_prompt_reset
+                
+                if not last:
+                    needs_reset = True
+                else:
+                    try:
+                        if isinstance(last, str):
+                            last_dt = datetime.fromisoformat(last)
+                        else:
+                            last_dt = last
+                        if (now - last_dt).total_seconds() >= 24 * 3600:
+                            needs_reset = True
+                    except Exception:
+                        needs_reset = True
+                
+                if needs_reset:
+                    user.prompt_count = 0
+                    user.last_prompt_reset = now
+                    models.db.session.commit()
+            except Exception as e:
+                print(f"Reset check error: {e}")
+                pass
         
         # Chat with Mistral AI
         response_text, is_image_request, image_prompt = mistral_chat.chat(
@@ -222,56 +272,31 @@ def chat_with_ai():
         
         # If Mistral detected an image generation request
         if is_image_request and image_prompt:
-            # Check user limits
+            # Check user limits BEFORE allowing generation
             with app.app_context():
                 user = models.User.query.filter_by(firebase_uid=uid).first()
                 
-                # Reset prompt count if needed
-                try:
-                    now = datetime.utcnow()
-                    needs_reset = False
-                    last = user.last_prompt_reset
-                    if not last:
-                        needs_reset = True
-                    else:
-                        try:
-                            if isinstance(last, str):
-                                last_dt = datetime.fromisoformat(last)
-                            else:
-                                last_dt = last
-                            if (now - last_dt).total_seconds() >= 24 * 3600:
-                                needs_reset = True
-                        except Exception:
-                            needs_reset = True
-                    
-                    if needs_reset:
-                        user.prompt_count = 0
-                        user.last_prompt_reset = now
-                        models.db.session.commit()
-                except Exception:
-                    pass
-                
-                # Check limits
+                # Check limits - BLOCK if at limit
                 if not user.is_pro and (user.prompt_count or 0) >= 5:
                     return jsonify({
                         'success': True,
-                        'response': "🎨 I'd love to help you create that! However, you've reached your free tier limit of 5 image generations. Upgrade to Pro for unlimited generations! [Upgrade](/upgrade)",
-                        'is_image_request': False,
-                        'needs_upgrade': True
+                        'response': "🎨 I'd love to help you create that! However, you've reached your free tier limit of 5 image generations per day. Upgrade to Pro for unlimited generations! [Upgrade to Pro](/upgrade)",
+                        'is_image_request': True,
+                        'needs_upgrade': True,
+                        'needs_generation': False  # 🎯 Don't allow generation
                     })
             
             # Generate a friendly, personalized acknowledgment using Mistral
             friendly_response = mistral_chat.generate_acknowledgment(user_message)
             
             # Return immediate acknowledgment with generation status
-            # The frontend will display "Generating your logo..." message
             return jsonify({
                 'success': True,
                 'response': friendly_response,
                 'is_image_request': True,
                 'image_prompt': image_prompt,
                 'status': 'generating',
-                'needs_generation': True
+                'needs_generation': True  # Allow generation
             })
         
         # Normal chat response (no image generation)
@@ -326,6 +351,41 @@ def generate_from_chat():
             user = models.User.query.filter_by(firebase_uid=uid).first()
             if not user:
                 return jsonify({'success': False, 'error': 'User not found'}), 404
+            
+            # Double-check limits before actual generation
+            # Reset check
+            try:
+                now = datetime.utcnow()
+                needs_reset = False
+                last = user.last_prompt_reset
+                
+                if not last:
+                    needs_reset = True
+                else:
+                    try:
+                        if isinstance(last, str):
+                            last_dt = datetime.fromisoformat(last)
+                        else:
+                            last_dt = last
+                        if (now - last_dt).total_seconds() >= 24 * 3600:
+                            needs_reset = True
+                    except Exception:
+                        needs_reset = True
+                
+                if needs_reset:
+                    user.prompt_count = 0
+                    user.last_prompt_reset = now
+                    models.db.session.commit()
+            except Exception as e:
+                print(f"Reset check error: {e}")
+                pass
+            
+            # BLOCK generation if at limit
+            if not user.is_pro and (user.prompt_count or 0) >= 5:
+                return jsonify({
+                    'success': False,
+                    'error': 'Free tier limit reached (5 images per day). Please upgrade to Pro for unlimited generations.'
+                }), 403
         
         # Generate the image with user settings
         try:
@@ -357,14 +417,24 @@ def generate_from_chat():
             except Exception:
                 pass
             
-            # Save to database
+            # Save to database AND increment count in ONE transaction
             try:
                 with app.app_context():
+                    # Refresh user object to avoid stale data
+                    user = models.User.query.filter_by(firebase_uid=uid).first()
+                    
                     entry = models.ChatHistory(user_id=user.id, prompt=image_prompt, image_path=image_path)
                     models.db.session.add(entry)
+                    
+                    # Increment count
                     user.prompt_count = (user.prompt_count or 0) + 1
+                    
+                    # Commit both together
                     models.db.session.commit()
-            except Exception:
+                    
+                    print(f"✅ User {user.email} prompt count: {user.prompt_count}/5")
+            except Exception as e:
+                print(f"❌ Database error: {e}")
                 models.db.session.rollback()
             
             # Build model description
@@ -396,24 +466,12 @@ def generate_from_chat():
             })
             
         except Exception as e:
+            print(f"Generation error: {e}")
             return jsonify({
                 'success': False,
                 'error': str(e)
             }), 500
             
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-        
-        # Normal chat response (no image generation)
-        return jsonify({
-            'success': True,
-            'response': response_text,
-            'is_image_request': False
-        })
-        
     except Exception as e:
         return jsonify({
             'success': False,
