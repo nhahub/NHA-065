@@ -25,12 +25,67 @@ function getAuthHeaders() {
     return {};
 }
 
+// Update user info and prompt count
+async function updateUserInfo() {
+    const token = localStorage.getItem('authToken');
+    if (!token) return;
+
+    try {
+        const response = await fetch('/api/user/profile', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        const data = await response.json();
+        if (data.success && data.profile) {
+            const profile = data.profile;
+            
+            // Update plan info display in header
+            const planInfo = document.getElementById('planInfo');
+            if (planInfo) {
+                if (profile.is_pro) {
+                    planInfo.innerHTML = '<span style="color: #10a37f; font-weight: 500;">✨ Pro Plan</span> • Unlimited prompts';
+                } else {
+                    const remaining = Math.max(0, 5 - (profile.prompt_count || 0));
+                    const color = remaining === 0 ? '#ef4444' : (remaining <= 2 ? '#f59e0b' : '#6b7280');
+                    planInfo.innerHTML = `<span style="color: ${color}; font-weight: 500;">Free Plan</span> • ${remaining}/5 prompts remaining`;
+                    
+                    // Show upgrade link if running low or out
+                    if (remaining <= 2) {
+                        planInfo.innerHTML += ' • <a href="/upgrade" style="color: #10a37f; text-decoration: underline; font-weight: 600;">Upgrade</a>';
+                    }
+                }
+            }
+
+            // Update user avatar and name in sidebar
+            const userAvatar = document.getElementById('userAvatar');
+            const userFullName = document.getElementById('userFullName');
+            
+            if (profile.fname || profile.lname) {
+                const initials = ((profile.fname || '')[0] || '') + ((profile.lname || '')[0] || '');
+                if (userAvatar) userAvatar.textContent = initials.toUpperCase() || 'AI';
+                if (userFullName) userFullName.textContent = `${profile.fname || ''} ${profile.lname || ''}`.trim();
+            } else {
+                const defaultName = profile.email ? profile.email.split('@')[0] : 'User';
+                if (userFullName) userFullName.textContent = defaultName;
+            }
+            
+            // Store profile globally
+            userProfile = profile;
+        }
+    } catch (error) {
+        console.error('Error fetching user info:', error);
+    }
+}
+
 // Initialize
 let userProfile = null;
 document.addEventListener('DOMContentLoaded', () => {
     loadHistory();
     loadUserProfile();
     loadAvailableLoras();
+    updateUserInfo();
     focusInput();
 });
 
@@ -175,6 +230,9 @@ async function sendMessage() {
                         });
                         
                         updateHistoryList();
+                        
+                        // 🎯 ADD THIS LINE - Update prompt count after successful generation
+                        await updateUserInfo();
                     } else {
                         addErrorMessage(generateData.error || 'Failed to generate image.');
                     }
@@ -195,10 +253,8 @@ async function sendMessage() {
                     content: chatData.response
                 });
                 
-                // Show upgrade message if needed
-                if (chatData.needs_upgrade) {
-                    // User can manually upgrade
-                }
+                // 🎯 ADD THIS LINE - Update UI even if limit reached (to show 0/5)
+                await updateUserInfo();
             }
             // Normal chat response with streaming
             else {
@@ -905,6 +961,10 @@ async function saveUserProfile() {
             if (avatarEl) avatarEl.textContent = initials.toUpperCase() || 'AI';
             const defaultName = userProfile.email ? userProfile.email.split('@')[0] : 'User';
             if (nameEl) nameEl.textContent = (userProfile.fname || userProfile.lname) ? `${userProfile.fname || ''} ${userProfile.lname || ''}`.trim() : defaultName;
+            
+            // 🎯 ADD THIS LINE - Update prompt count display after saving profile
+            await updateUserInfo();
+            
             // Close modal
             toggleSettings();
             alert('Profile saved');
