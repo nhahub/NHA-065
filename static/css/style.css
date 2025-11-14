@@ -1664,3 +1664,29 @@ input[type="range"] {
     margin: 12px 0;
     font-size: 14px;
 }
+/* Plan badge */
+.plan-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+.plan-badge.free   { background:#e0e0e0; color:#333; }
+.plan-badge.pro    { background:#10b981; color:#fff; }
+
+/* Danger button (unsubscribe) */
+.danger-btn {
+    background:#ef4444;
+    color:#fff;
+    border:none;
+    border-radius:6px;
+    padding:6px 12px;
+    font-size:0.9rem;
+    cursor:pointer;
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+}
+.danger-btn:hover { background:#dc2626; }

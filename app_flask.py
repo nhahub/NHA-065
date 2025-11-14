@@ -856,6 +856,42 @@ def serve_output(filename):
     """Serve generated images"""
     return send_from_directory(config.OUTPUTS_DIR, filename)
 
+@app.route('/api/unsubscribe', methods=['POST'])
+@verify_firebase_token
+def unsubscribe():
+    """
+    Unsubscribe user from Pro plan and revert to free tier
+    """
+    try:
+        firebase_user = getattr(request, 'firebase_user', None)
+        if not firebase_user:
+            return jsonify({'success': False, 'error': 'Authentication required'}), 401
+        
+        uid = firebase_user.get('uid')
+        
+        with app.app_context():
+            user = models.User.query.filter_by(firebase_uid=uid).first()
+            if not user:
+                return jsonify({'success': False, 'error': 'User not found'}), 404
+            
+            if not user.is_pro:
+                return jsonify({'success': False, 'error': 'User is not subscribed to Pro'}), 400
+            
+            # Downgrade user to free tier
+            user.is_pro = False
+            models.db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': 'Successfully unsubscribed from Pro. You are now on the free tier.'
+            })
+    
+    except Exception as e:
+        models.db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 if __name__ == '__main__':
     print(f"\n{'='*60}")

@@ -51,8 +51,8 @@ async function updateUserInfo() {
                     const color = remaining === 0 ? '#ef4444' : (remaining <= 2 ? '#f59e0b' : '#6b7280');
                     planInfo.innerHTML = `<span style="color: ${color}; font-weight: 500;">Free Plan</span> • ${remaining}/5 prompts remaining`;
                     
-                    // Show upgrade link if running low or out
-                    if (remaining <= 2) {
+                    // Show upgrade link
+                    if (remaining <= 5) {
                         planInfo.innerHTML += ' • <a href="/upgrade" style="color: #10a37f; text-decoration: underline; font-weight: 600;">Upgrade</a>';
                     }
                 }
@@ -905,39 +905,64 @@ function toggleLoraSettings() {
     }
 }
 
-// Load current user's profile (fname/lname)
+// Load user profile and update UI
 async function loadUserProfile() {
+    const token = localStorage.getItem('authToken');
+    if (!token) return;
+
     try {
-        const resp = await fetch('/api/user/profile', { headers: getAuthHeaders() });
+        const resp = await fetch('/api/user/profile', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
         const data = await resp.json();
-        if (data.success && data.profile) {
-            userProfile = data.profile;
-            const fname = userProfile.fname || '';
-            const lname = userProfile.lname || '';
-            const initials = ((fname[0] || '') + (lname[0] || '')).toUpperCase() || 'AI';
-            const defaultName = userProfile.email ? userProfile.email.split('@')[0] : 'User';
-            const avatarEl = document.getElementById('userAvatar');
-            const nameEl = document.getElementById('userFullName');
-            if (avatarEl) avatarEl.textContent = initials;
-            if (nameEl) nameEl.textContent = (fname || lname) ? `${fname} ${lname}`.trim() : defaultName;
-            // Show plan info: free users limited to 5 prompts
-            try {
-                const planEl = document.getElementById('planInfo');
-                if (planEl) {
-                    const isPro = !!userProfile.is_pro;
-                    const used = Number(userProfile.prompt_count || 0);
-                    if (isPro) {
-                        planEl.textContent = 'Pro — Unlimited prompts';
-                    } else {
-                        planEl.innerHTML = `Free — max prompts: 5 (used ${used}/5) <a href="/upgrade" style="margin-left:8px; color: var(--accent-color); font-weight:600;">Upgrade</a>`;
-                    }
+        if (!data.success) throw new Error(data.error || 'Failed');
+
+        const profile = data.profile;
+
+        /* ---------- 1. Header plan info (same as updateUserInfo) ---------- */
+        const planInfo = document.getElementById('planInfo');
+        if (planInfo) {
+            if (profile.is_pro) {
+                planInfo.innerHTML = '<span style="color: #10a37f; font-weight: 500;">Pro Plan</span> • Unlimited prompts';
+            } else {
+                const remaining = Math.max(0, 5 - (profile.prompt_count || 0));
+                const color = remaining === 0 ? '#ef4444' : (remaining <= 2 ? '#f59e0b' : '#6b7280');
+                planInfo.innerHTML = `<span style="color: ${color}; font-weight: 500;">Free Plan</span> • ${remaining}/5 prompts remaining`;
+                if (remaining <= 5) {
+                    planInfo.innerHTML += ' • <a href="/upgrade" style="color: #10a37f; text-decoration: underline; font-weight: 600;">Upgrade</a>';
                 }
-            } catch (e) {
-                console.warn('Could not render plan info', e);
             }
         }
-    } catch (err) {
-        console.warn('Could not load user profile', err);
+
+        /* ---------- 2. Sidebar name / avatar ---------- */
+        const userAvatar = document.getElementById('userAvatar');
+        const userFullName = document.getElementById('userFullName');
+
+        if (profile.fname || profile.lname) {
+            const initials = ((profile.fname || '')[0] || '') + ((profile.lname || '')[0] || '');
+            if (userAvatar) userAvatar.textContent = initials.toUpperCase() || 'AI';
+            if (userFullName) userFullName.textContent = `${profile.fname || ''} ${profile.lname || ''}`.trim();
+        } else {
+            const defaultName = profile.email ? profile.email.split('@')[0] : 'User';
+            if (userFullName) userFullName.textContent = defaultName;
+        }
+
+        /* ---------- 3. Settings-modal plan badge (unchanged) ---------- */
+        const badge = document.getElementById('planBadge');
+        if (badge) {
+            const badgeText = badge.querySelector('.plan-text');
+            const left = 5 - (profile.prompt_count || 0);
+            badgeText.textContent = profile.is_pro ? 'Pro (Unlimited)' : `Free (${left} left today)`;
+            badge.className = profile.is_pro ? 'plan-badge pro' : 'plan-badge free';
+        }
+
+        /* ---------- 4. Unsubscribe button visibility ---------- */
+        document.getElementById('unsubscribeBtn').style.display = profile.is_pro ? 'inline-flex' : 'none';
+
+        // store for other parts of the UI
+        userProfile = profile;
+    } catch (e) {
+        console.warn('Could not load profile:', e);
     }
 }
 
@@ -1002,4 +1027,38 @@ document.addEventListener('click', (e) => {
         !menuBtn.contains(e.target)) {
         sidebar.classList.remove('active');
     }
+});
+
+// Unsubscribe from Pro 
+async function unsubscribeFromPro() {
+    if (!confirm('Are you sure you want to cancel your Pro subscription? You will revert to the free tier (5 images/day).')) {
+        return;
+    }
+
+    try {
+        const resp = await fetch('/api/unsubscribe', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + localStorage.getItem('authToken'),
+                'Content-Type': 'application/json'
+            }
+        });
+        const data = await resp.json();
+
+        if (!data.success) throw new Error(data.error || 'Failed');
+
+        alert('You have been downgraded to the free tier.');
+        loadUserProfile();               // refresh UI
+        // reload page to clear any cached state
+        location.reload();
+    } catch (e) {
+        console.error(e);
+        alert('Unsubscribe failed: ' + (e.message || e));
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    // existing initFirebaseClient() already runs
+    // wait a tick for the token to be stored
+    setTimeout(loadUserProfile, 800);
 });
