@@ -68,7 +68,12 @@ GPU_DEVICE = "cuda:0"  # Change if you have multiple GPUs
 
 # Database and Firebase settings
 # DATABASE_URL can be set to e.g. 'sqlite:///data.db' or a postgres URL
+# For PostgreSQL: postgresql://username:password@host:port/database
+# For local PostgreSQL: postgresql://postgres:password@localhost:5432/zypher_ai
 DATABASE_URL = os.getenv('DATABASE_URL', f"sqlite:///{os.path.join(BASE_DIR, 'data.db')}")
+
+# Brave Search API Configuration
+BRAVE_SEARCH_API_KEY = os.getenv('BRAVE_SEARCH_API_KEY', '')
 
 # Firebase service account JSON path (server-side)
 FIREBASE_SERVICE_ACCOUNT = os.getenv(

@@ -1,12 +1,14 @@
 """
 Mistral AI Chat Manager for Zypher AI Logo Generator
 Handles conversations with Mistral AI and detects image generation requests
+Integrates with Logo Reference Agent for enhanced logo design workflow
 """
 import json
 import re
 import requests
 from typing import Dict, Tuple, Optional, List
 import config
+from utils.logo_agent import LogoReferenceAgent
 
 
 class MistralChatManager:
@@ -17,6 +19,10 @@ class MistralChatManager:
         self.model = config.MISTRAL_MODEL
         self.endpoint = config.MISTRAL_API_ENDPOINT
         self.system_prompt = config.MISTRAL_SYSTEM_PROMPT
+        self.logo_agent = LogoReferenceAgent()
+        
+        # Track pending logo requests awaiting confirmation
+        self.pending_logo_requests = {}  # user_id -> logo_request_data
         
         if not self.api_key or self.api_key == 'your_mistral_api_key_here':
             print("⚠️  WARNING: MISTRAL_API_KEY not set in .env file")
@@ -73,19 +79,54 @@ class MistralChatManager:
         
         return None
     
-    def chat(self, user_message: str, conversation_history: Optional[List[Dict]] = None) -> Tuple[str, bool, Optional[str]]:
+    def chat(self, user_message: str, conversation_history: Optional[List[Dict]] = None, user_id: Optional[str] = None) -> Tuple[str, bool, Optional[str], Optional[Dict]]:
         """
         Send a message to Mistral AI and get response
         
         Args:
             user_message (str): User's message
             conversation_history (Optional[List[Dict]]): Previous messages in format [{"role": "user/assistant", "content": "..."}]
+            user_id (Optional[str]): User ID for tracking pending requests
             
         Returns:
-            Tuple[str, bool, Optional[str]]: (response_text, is_image_request, image_prompt)
+            Tuple[str, bool, Optional[str], Optional[Dict]]: (response_text, is_image_request, image_prompt, logo_preview_data)
         """
         if not self.api_key or self.api_key == 'your_mistral_api_key_here':
-            return ("⚠️ Mistral API key not configured. Please add MISTRAL_API_KEY to your .env file. Get your key from: https://console.mistral.ai/api-keys/", False, None)
+            return ("⚠️ Mistral API key not configured. Please add MISTRAL_API_KEY to your .env file. Get your key from: https://console.mistral.ai/api-keys/", False, None, None)
+        
+        # Check if user is confirming a pending logo request
+        if user_id and user_id in self.pending_logo_requests:
+            user_msg_lower = user_message.lower().strip()
+            
+            # Confirmation keywords
+            if any(keyword in user_msg_lower for keyword in ['yes', 'confirm', 'looks good', 'perfect', 'generate', 'go ahead', '✅', 'proceed']):
+                logo_data = self.pending_logo_requests.pop(user_id)
+                return (
+                    "Great! Generating your logo now... ✨",
+                    True,
+                    logo_data['final_diffusion_prompt'],
+                    None
+                )
+            
+            # Refinement/rejection keywords
+            elif any(keyword in user_msg_lower for keyword in ['no', 'refine', 'different', 'change', 'search again', '❌', 'revise']):
+                # Keep the original request and search again
+                original_request = self.pending_logo_requests[user_id]['request_data']['raw_request']
+                self.pending_logo_requests.pop(user_id)
+                
+                # Re-process with logo agent
+                try:
+                    logo_result = self.logo_agent.process_logo_request(user_message + " " + original_request)
+                    if logo_result.get('success'):
+                        preview_text = self.logo_agent.format_preview_for_user(logo_result)
+                        
+                        # Store pending request
+                        if user_id:
+                            self.pending_logo_requests[user_id] = logo_result
+                        
+                        return (preview_text, False, None, logo_result)
+                except Exception as e:
+                    print(f"Error re-processing logo request: {e}")
         
         try:
             # Build messages array
@@ -128,21 +169,43 @@ class MistralChatManager:
             result = response.json()
             assistant_message = result['choices'][0]['message']['content']
             
-            # Check if response contains image generation request
+            # Check if this is a logo generation request
+            if self.is_image_generation_request(user_message):
+                try:
+                    # Use Logo Reference Agent to gather references and create optimized prompt
+                    logo_result = self.logo_agent.process_logo_request(user_message)
+                    
+                    if logo_result.get('success'):
+                        # Format preview for user
+                        preview_text = self.logo_agent.format_preview_for_user(logo_result)
+                        
+                        # Store pending request for confirmation
+                        if user_id:
+                            self.pending_logo_requests[user_id] = logo_result
+                        
+                        # Return preview without generating yet
+                        return (preview_text, False, None, logo_result)
+                    
+                except Exception as e:
+                    print(f"Error in logo agent processing: {e}")
+                    # Fall back to original behavior
+                    pass
+            
+            # Check if response contains image generation request (fallback)
             image_prompt = self.extract_image_prompt(assistant_message)
             
             if image_prompt:
-                return (assistant_message, True, image_prompt)
+                return (assistant_message, True, image_prompt, None)
             else:
-                return (assistant_message, False, None)
+                return (assistant_message, False, None, None)
                 
         except requests.exceptions.Timeout:
-            return ("⚠️ Request timed out. Please try again.", False, None)
+            return ("⚠️ Request timed out. Please try again.", False, None, None)
         except requests.exceptions.RequestException as e:
             error_msg = f"⚠️ Error communicating with Mistral AI: {str(e)}"
-            return (error_msg, False, None)
+            return (error_msg, False, None, None)
         except Exception as e:
-            return (f"⚠️ Unexpected error: {str(e)}", False, None)
+            return (f"⚠️ Unexpected error: {str(e)}", False, None, None)
     
     def enhance_image_prompt(self, basic_prompt: str) -> str:
         """

@@ -264,11 +264,27 @@ def chat_with_ai():
                 print(f"Reset check error: {e}")
                 pass
         
-        # Chat with Mistral AI
-        response_text, is_image_request, image_prompt = mistral_chat.chat(
+        # Chat with Mistral AI (pass user_id for logo confirmation tracking)
+        response_text, is_image_request, image_prompt, logo_preview = mistral_chat.chat(
             user_message, 
-            conversation_history
+            conversation_history,
+            user_id=uid
         )
+        
+        # If logo preview data is returned, send preview for confirmation
+        if logo_preview and not is_image_request:
+            return jsonify({
+                'success': True,
+                'response': response_text,
+                'is_image_request': False,
+                'awaiting_confirmation': True,
+                'logo_preview': {
+                    'extracted_features': logo_preview.get('extracted_visual_features', {}),
+                    'final_prompt': logo_preview.get('final_diffusion_prompt', ''),
+                    'confidence': logo_preview.get('confidence', 'medium'),
+                    'search_results': logo_preview.get('search_results', [])
+                }
+            })
         
         # If Mistral detected an image generation request
         if is_image_request and image_prompt:
@@ -892,6 +908,126 @@ def unsubscribe():
             'success': False,
             'error': str(e)
         }), 500
+
+
+# Admin routes
+@app.route('/admin')
+def admin_page():
+    """Render admin dashboard"""
+    return render_template('admin.html')
+
+
+@app.route('/api/admin/users', methods=['GET'])
+@verify_firebase_token
+def admin_get_users():
+    """
+    Get all users with their statistics (admin only)
+    TODO: Add proper admin role checking
+    """
+    try:
+        firebase_user = getattr(request, 'firebase_user', None)
+        if not firebase_user:
+            return jsonify({'success': False, 'error': 'Authentication required'}), 401
+        
+        # TODO: Check if user has admin role
+        # For now, any authenticated user can access (update this in production!)
+        
+        with app.app_context():
+            users = models.User.query.all()
+            
+            users_data = []
+            total_generations = 0
+            today_generations = 0
+            pro_count = 0
+            
+            today = datetime.utcnow().date()
+            
+            for user in users:
+                history_count = models.ChatHistory.query.filter_by(user_id=user.id).count()
+                total_generations += history_count
+                
+                # Count today's generations
+                today_count = models.ChatHistory.query.filter_by(user_id=user.id).filter(
+                    models.ChatHistory.created_at >= datetime.combine(today, datetime.min.time())
+                ).count()
+                today_generations += today_count
+                
+                if user.is_pro:
+                    pro_count += 1
+                
+                users_data.append({
+                    'id': user.id,
+                    'email': user.email,
+                    'full_name': user.full_name,
+                    'is_pro': user.is_pro,
+                    'history_count': history_count,
+                    'prompt_count': user.prompt_count or 0,
+                    'created_at': user.created_at.isoformat() if user.created_at else None
+                })
+            
+            stats = {
+                'total_users': len(users),
+                'pro_users': pro_count,
+                'total_generations': total_generations,
+                'today_generations': today_generations
+            }
+            
+            return jsonify({
+                'success': True,
+                'users': users_data,
+                'stats': stats
+            })
+    
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/admin/users/<int:user_id>/history', methods=['GET'])
+@verify_firebase_token
+def admin_get_user_history(user_id):
+    """
+    Get chat history for a specific user (admin only)
+    TODO: Add proper admin role checking
+    """
+    try:
+        firebase_user = getattr(request, 'firebase_user', None)
+        if not firebase_user:
+            return jsonify({'success': False, 'error': 'Authentication required'}), 401
+        
+        # TODO: Check if user has admin role
+        
+        with app.app_context():
+            user = models.User.query.get(user_id)
+            if not user:
+                return jsonify({'success': False, 'error': 'User not found'}), 404
+            
+            history = models.ChatHistory.query.filter_by(user_id=user_id)\
+                .order_by(models.ChatHistory.created_at.desc())\
+                .all()
+            
+            history_data = []
+            for entry in history:
+                history_data.append({
+                    'id': entry.id,
+                    'prompt': entry.prompt,
+                    'image_path': entry.image_path,
+                    'created_at': entry.created_at.isoformat() if entry.created_at else None
+                })
+            
+            return jsonify({
+                'success': True,
+                'history': history_data
+            })
+    
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 
 if __name__ == '__main__':
     print(f"\n{'='*60}")

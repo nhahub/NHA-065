@@ -177,6 +177,23 @@ async function sendMessage() {
                 content: prompt
             });
             
+            // Check if awaiting confirmation for logo preview
+            if (chatData.awaiting_confirmation && chatData.logo_preview) {
+                // Display logo preview with extracted features
+                const previewMsg = addLogoPreviewMessage(chatData.response, chatData.logo_preview);
+                
+                // Add to Mistral conversation history
+                mistralConversationHistory.push({
+                    role: 'assistant',
+                    content: chatData.response
+                });
+                
+                // Enable send button for user to confirm/refine
+                sendBtn.disabled = false;
+                focusInput();
+                return;
+            }
+            
             // If Mistral detected an image generation request and needs to generate
             if (chatData.is_image_request && chatData.needs_generation) {
                 // Add assistant response message with streaming effect
@@ -1000,6 +1017,88 @@ async function saveUserProfile() {
         console.error('Failed to save profile', err);
         alert('Failed to save profile');
     }
+}
+
+// Add logo preview message with confirmation buttons
+function addLogoPreviewMessage(text, logoPreview) {
+    const messages = document.getElementById('messages');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message assistant';
+    
+    const avatar = '<img src="/photos/zypher.jpeg" alt="AI" class="avatar-logo">';
+    
+    // Build feature display
+    const features = logoPreview.extracted_features || {};
+    let featuresHTML = '<div class="logo-preview-features">';
+    
+    if (features.shapes && features.shapes.length > 0) {
+        featuresHTML += `<div class="feature-item"><strong>Shapes:</strong> ${features.shapes.slice(0, 3).join(', ')}</div>`;
+    }
+    if (features.icons && features.icons.length > 0) {
+        featuresHTML += `<div class="feature-item"><strong>Icons/Symbols:</strong> ${features.icons.slice(0, 3).join(', ')}</div>`;
+    }
+    if (features.colors && features.colors.length > 0) {
+        featuresHTML += `<div class="feature-item"><strong>Colors:</strong> ${features.colors.slice(0, 4).join(', ')}</div>`;
+    }
+    if (features.composition && features.composition.length > 0) {
+        featuresHTML += `<div class="feature-item"><strong>Style:</strong> ${features.composition.slice(0, 3).join(', ')}</div>`;
+    }
+    if (features.typography && features.typography.length > 0) {
+        featuresHTML += `<div class="feature-item"><strong>Typography:</strong> ${features.typography.slice(0, 2).join(', ')}</div>`;
+    }
+    
+    featuresHTML += '</div>';
+    
+    messageDiv.innerHTML = `
+        <div class="message-avatar">${avatar}</div>
+        <div class="message-content">
+            <div class="message-text markdown-content">${typeof marked !== 'undefined' ? marked.parse(text) : escapeHtml(text)}</div>
+            
+            <div class="logo-preview-card">
+                <div class="preview-header">
+                    <span class="preview-icon">🎨</span>
+                    <span class="preview-title">Design Analysis Complete</span>
+                </div>
+                
+                ${featuresHTML}
+                
+                <div class="preview-prompt">
+                    <strong>Generated Prompt:</strong>
+                    <div class="prompt-text">${escapeHtml(logoPreview.final_prompt || '')}</div>
+                </div>
+                
+                <div class="preview-actions">
+                    <button class="preview-btn confirm-btn" onclick="confirmLogoGeneration()">
+                        <span>✅</span> Confirm & Generate
+                    </button>
+                    <button class="preview-btn refine-btn" onclick="refineLogoRequest()">
+                        <span>🔄</span> Refine Search
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    messages.appendChild(messageDiv);
+    scrollToBottom();
+    
+    return messageDiv;
+}
+
+// Confirm logo generation
+async function confirmLogoGeneration() {
+    // Send confirmation message
+    const input = document.getElementById('promptInput');
+    input.value = 'yes, confirm';
+    await sendMessage();
+}
+
+// Refine logo request
+async function refineLogoRequest() {
+    // Send refinement message
+    const input = document.getElementById('promptInput');
+    input.value = 'no, search again';
+    await sendMessage();
 }
 
 // Utility: Escape HTML

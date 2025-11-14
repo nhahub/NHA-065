@@ -36,3 +36,10 @@ requests>=2.31.0
 firebase_admin
 flask_sqlalchemy
 sentencepiece
+
+# PostgreSQL support
+psycopg2-binary>=2.9.0
+
+# Web scraping and search
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
