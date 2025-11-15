@@ -127,6 +127,8 @@ function newChat() {
 }
 
 // Send message
+// static/js/app.js - Update the sendMessage function around line 150-200
+
 async function sendMessage() {
     const input = document.getElementById('promptInput');
     const prompt = input.value.trim();
@@ -172,7 +174,7 @@ async function sendMessage() {
             mistralConversationHistory.push({ role: 'user', content: prompt });
 
             if (chatData.is_image_request && chatData.needs_generation) {
-                // Show AI acknowledgment (keeps it visible)
+                // Show AI acknowledgment
                 const responseMsg = addStreamingMessage('assistant', '');
                 await streamText(chatData.response, responseMsg);
                 finalizeStreamingMessage();
@@ -205,8 +207,56 @@ async function sendMessage() {
                     removeGeneratingIndicator();
 
                     if (generateData.success) {
-                        // Append image as NEW message
-                        addMessage('assistant', '', generateData.image, generateData.metadata, generateData.filename, chatData.image_prompt);
+                        // Create the image message with the same format as history view
+                        const messages = document.getElementById('messages');
+                        const messageDiv = document.createElement('div');
+                        messageDiv.className = 'message assistant';
+                        
+                        const fullPrompt = chatData.image_prompt || '[No refined prompt available]';
+                        
+                        messageDiv.innerHTML = `
+                            <div class="message-avatar"><img src="/photos/zypher.jpeg" alt="AI" class="avatar-logo"></div>
+                            <div class="message-content">
+                                <div class="message-text markdown-content">
+                                    <strong>Generated Image</strong><br>
+                                    <details style="margin-top: 8px;">
+                                        <summary style="cursor: pointer; color: var(--text-secondary); font-size: 0.9em;">
+                                            View full generation prompt
+                                        </summary>
+                                        <div style="margin-top: 8px; padding: 12px; background: var(--bg-secondary); border-radius: 6px; font-size: 0.85em; line-height: 1.6; white-space: pre-wrap;">
+                                            ${escapeHtml(fullPrompt)}
+                                        </div>
+                                    </details>
+                                </div>
+                                <div class="message-image">
+                                    <img src="${generateData.image}" alt="Generated logo">
+                                </div>
+                                <div class="message-metadata">
+                                    <div class="metadata-row">
+                                        <span class="metadata-label">Model:</span>
+                                        <span>${generateData.metadata.model}</span>
+                                    </div>
+                                    <div class="metadata-row">
+                                        <span class="metadata-label">Steps:</span>
+                                        <span>${generateData.metadata.steps}</span>
+                                    </div>
+                                    <div class="metadata-row">
+                                        <span class="metadata-label">Dimensions:</span>
+                                        <span>${generateData.metadata.dimensions}</span>
+                                    </div>
+                                    <div class="metadata-row">
+                                        <span class="metadata-label">Generated:</span>
+                                        <span>${generateData.metadata.timestamp}</span>
+                                    </div>
+                                    <button class="download-btn" onclick="downloadImage('${generateData.image}', '${generateData.filename}')">
+                                        Download
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                        
+                        messages.appendChild(messageDiv);
+                        scrollToBottom();
 
                         conversationHistory.push({
                             user: prompt,
@@ -709,32 +759,28 @@ async function viewHistoryItem(historyId) {
         const response = await fetch(`/api/history/${historyId}`, { headers: getAuthHeaders() });
         const data = await response.json();
 
-        // FIX: Changed from data.item to data.history
         if (data.success && data.history) {
             document.getElementById('messages').innerHTML = '';
             document.getElementById('welcomeScreen').style.display = 'none';
 
-            const item = data.history; // FIX: Changed from data.item to data.history
+            const item = data.history;
 
-            // 1. USER'S REAL MESSAGE (what they typed)
+            // 1. Show user's original message
             const userMessage = item.user_message || 'Generate image';
-            if (userMessage && userMessage !== 'Generate image' && userMessage.trim() !== '') {
-                addMessage('user', userMessage);
-            }
+            addMessage('user', userMessage);
 
-            // 2. AI TEXT RESPONSE
+            // 2. Show AI's text response (if exists)
             if (item.ai_response && item.message_type !== 'image') {
                 addMessage('assistant', item.ai_response);
             }
 
-            // 3. GENERATED IMAGE + ONLY image_prompt in the details
+            // 3. Show the generated image using the SAME structure as sendMessage()
             if (item.image_path && item.message_type === 'image') {
                 const imageName = item.image_path.split('/').pop() || item.image_path.split('\\').pop();
                 const imageUrl = `/outputs/${imageName}`;
-        
-                // ONLY the refined AI prompt - NEVER user_message
                 const fullPrompt = item.image_prompt || '[No refined prompt available]';
-        
+                
+                // Use the same format as in sendMessage() for consistency
                 const messages = document.getElementById('messages');
                 const messageDiv = document.createElement('div');
                 messageDiv.className = 'message assistant';
@@ -760,7 +806,7 @@ async function viewHistoryItem(historyId) {
                         <div class="message-metadata">
                             <div class="metadata-row">
                                 <span class="metadata-label">Generated:</span>
-                                <span>${item.timestamp ? new Date(item.timestamp).toLocaleString() : (item.created_at ? new Date(item.created_at).toLocaleString() : 'Unknown')}</span>
+                                <span>${item.timestamp ? new Date(item.timestamp).toLocaleString() : 'Unknown'}</span>
                             </div>
                             <button class="download-btn" onclick="downloadImage('${imageUrl}', '${imageName}')">
                                 Download
@@ -769,8 +815,9 @@ async function viewHistoryItem(historyId) {
                     </div>
                 `;
                 messages.appendChild(messageDiv);
-                scrollToBottom();
             }
+            
+            scrollToBottom();
         } else {
             alert('Could not load history item');
         }
@@ -779,7 +826,6 @@ async function viewHistoryItem(historyId) {
         alert('Failed to load history item');
     }
 }
-
 // Delete history item
 async function deleteHistoryItem(event, historyId) {
     event.stopPropagation(); // Prevent triggering the view action

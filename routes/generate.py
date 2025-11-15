@@ -36,7 +36,24 @@ def generate_from_chat():
         return jsonify({'success': False, 'error': 'Limit reached', 'remaining_prompts': 0}), 403
 
     try:
-        image = model_manager.generate_image(prompt=image_prompt, **data)
+        # Extract only the parameters needed for generation
+        gen_params = {
+            'use_lora': data.get('use_lora', False),
+            'lora_filename': data.get('lora_filename'),
+            'num_steps': data.get('num_steps'),
+            'width': data.get('width'),
+            'height': data.get('height'),
+            'use_ip_adapter': data.get('use_ip_adapter', False),
+            'ip_adapter_scale': data.get('ip_adapter_scale', 0.5),
+            'reference_image': data.get('reference_image')
+        }
+        
+        # Remove None values
+        gen_params = {k: v for k, v in gen_params.items() if v is not None}
+        
+        # Generate image with explicit parameters only
+        image = model_manager.generate_image(prompt=image_prompt, **gen_params)
+        
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"logo_{timestamp}.{config.IMAGE_FORMAT.lower()}"
         path = os.path.join(config.OUTPUTS_DIR, filename)
@@ -51,11 +68,26 @@ def generate_from_chat():
             entry = ChatHistory.query.get(chat_entry_id)
             if entry and entry.user_id == user.id:
                 entry.image_path = path
+                entry.image_prompt = image_prompt
             else:
-                entry = ChatHistory(user_id=user.id, user_message="Generated image", ai_response="Image", image_path=path, message_type='image')
+                entry = ChatHistory(
+                    user_id=user.id,
+                    user_message="Generated image",
+                    ai_response="Image",
+                    image_path=path,
+                    image_prompt=image_prompt,
+                    message_type='image'
+                )
                 db.session.add(entry)
         else:
-            entry = ChatHistory(user_id=user.id, user_message="Generated image", ai_response="Image", image_path=path, message_type='image')
+            entry = ChatHistory(
+                user_id=user.id,
+                user_message="Generated image",
+                ai_response="Image",
+                image_path=path,
+                image_prompt=image_prompt,
+                message_type='image'
+            )
             db.session.add(entry)
 
         old_count = user.prompt_count
@@ -67,12 +99,21 @@ def generate_from_chat():
             'image': f"data:image/{config.IMAGE_FORMAT.lower()};base64,{img_str}",
             'filename': filename,
             'remaining_prompts': None if user.is_pro else (5 - user.prompt_count),
+            'metadata': {
+                'model': config.BASE_MODEL_ID,
+                'steps': gen_params.get('num_steps', config.DEFAULT_GENERATION_PARAMS['num_inference_steps']),
+                'dimensions': f"{gen_params.get('width', 1024)}x{gen_params.get('height', 1024)}",
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            },
             'debug': {'old_count': old_count, 'new_count': user.prompt_count}
         })
 
     except Exception as e:
         db.session.rollback()
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @generate_bp.route('/outputs/<filename>')
 def serve_output(filename):

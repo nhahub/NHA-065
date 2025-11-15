@@ -203,6 +203,17 @@ class ModelManager:
         
         # Merge default params with custom ones
         gen_params = config.DEFAULT_GENERATION_PARAMS.copy()
+        
+        # Map 'num_steps' to 'num_inference_steps' if provided
+        if 'num_steps' in kwargs:
+            kwargs['num_inference_steps'] = kwargs.pop('num_steps')
+        
+        # Remove custom parameters that shouldn't be passed to FluxPipeline
+        # These are handled separately above
+        custom_params = ['use_lora', 'lora_filename', 'use_ip_adapter', 'chat_entry_id']
+        for param in custom_params:
+            kwargs.pop(param, None)
+        
         gen_params.update(kwargs)
         
         try:
