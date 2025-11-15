@@ -16,6 +16,10 @@ import os
 generate_bp = Blueprint('generate', __name__)
 model_manager = ModelManager()
 
+# Import the shared user_reference_images from chat route
+# This is a temporary solution - in production, use Redis or database
+from routes.chat import user_reference_images
+
 @generate_bp.route('/api/generate-from-chat', methods=['POST'])
 @verify_firebase_token
 def generate_from_chat():
@@ -36,6 +40,11 @@ def generate_from_chat():
         return jsonify({'success': False, 'error': 'Limit reached', 'remaining_prompts': 0}), 403
 
     try:
+        # Check if user has a stored reference image from web search
+        reference_image = user_reference_images.get(uid)
+        use_ip_adapter_auto = reference_image is not None
+        ip_adapter_scale_auto = 0.6 if reference_image else 0.5  # Higher influence for web references
+        
         # Extract only the parameters needed for generation
         gen_params = {
             'use_lora': data.get('use_lora', False),
@@ -43,9 +52,9 @@ def generate_from_chat():
             'num_steps': data.get('num_steps'),
             'width': data.get('width'),
             'height': data.get('height'),
-            'use_ip_adapter': data.get('use_ip_adapter', False),
-            'ip_adapter_scale': data.get('ip_adapter_scale', 0.5),
-            'reference_image': data.get('reference_image')
+            'use_ip_adapter': data.get('use_ip_adapter', False) or use_ip_adapter_auto,
+            'ip_adapter_scale': ip_adapter_scale_auto if reference_image else data.get('ip_adapter_scale', 0.5),
+            'reference_image': reference_image if reference_image else data.get('reference_image')
         }
         
         # Remove None values
@@ -93,6 +102,10 @@ def generate_from_chat():
         old_count = user.prompt_count
         user.prompt_count += 1
         db.session.commit()
+        
+        # Clear the reference image after successful generation to save memory
+        if uid in user_reference_images:
+            del user_reference_images[uid]
 
         return jsonify({
             'success': True,

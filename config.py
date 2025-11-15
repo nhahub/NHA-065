@@ -89,6 +89,11 @@ FIREBASE_SERVICE_ACCOUNT = os.getenv(
 )
 
 # -------------------------------------------------
+# Brave Search API (for web search functionality)
+# -------------------------------------------------
+BRAVE_SEARCH_API_KEY = os.getenv("BRAVE_SEARCH_API_KEY", "")
+
+# -------------------------------------------------
 # Mistral AI
 # -------------------------------------------------
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
@@ -151,6 +156,7 @@ _config_values = {
     "MISTRAL_SYSTEM_PROMPT": MISTRAL_SYSTEM_PROMPT,
     "MAX_HISTORY_ITEMS": MAX_HISTORY_ITEMS,
     "HISTORY_FILE": HISTORY_FILE,
+    "BRAVE_SEARCH_API_KEY": BRAVE_SEARCH_API_KEY,
 }
 
 # Attach all values to the config instance
