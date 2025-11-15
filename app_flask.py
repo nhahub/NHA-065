@@ -214,6 +214,10 @@ def chat_with_ai():
         data = request.json
         user_message = data.get('message', '').strip()
         conversation_history = data.get('conversation_history', [])
+        use_web_search = data.get('use_web_search', False)
+        
+        # Debug: Log web search toggle state
+        print(f"🔍 DEBUG: use_web_search = {use_web_search}, message = '{user_message[:50]}...'")
         
         if not user_message:
             return jsonify({
@@ -264,25 +268,131 @@ def chat_with_ai():
                 print(f"Reset check error: {e}")
                 pass
         
+        # Check for photo search BEFORE calling Mistral if web search is enabled
+        if use_web_search:
+            # Import here to avoid circular dependency
+            from utils.logo_agent import LogoReferenceAgent
+            logo_agent = LogoReferenceAgent()
+            
+            print(f"🔍 DEBUG: Web search enabled, checking if photo search request...")
+            
+            # Check if this is a photo search request
+            if mistral_chat.is_photo_search_request(user_message):
+                print(f"✅ DEBUG: Detected photo search request!")
+                
+                # Handle photo search confirmation first
+                if uid and uid in mistral_chat.pending_photo_requests:
+                    user_msg_lower = user_message.lower().strip()
+                    
+                    # Check if user selected a specific image by index
+                    import re
+                    index_match = re.search(r'use image (\d+)', user_msg_lower)
+                    selected_index = int(index_match.group(1)) if index_match else 0
+                    
+                    # Confirmation keywords
+                    if any(keyword in user_msg_lower for keyword in ['yes', 'correct', 'use image', 'this is correct', 'looks good', 'perfect', 'use it', '✅']):
+                        photo_data = mistral_chat.pending_photo_requests.pop(uid)
+                        
+                        # Get the selected result from the results array
+                        results = photo_data.get('results', [])
+                        if results and selected_index < len(results):
+                            selected_photo = results[selected_index]
+                            return jsonify({
+                                'success': True,
+                                'response': f"Perfect! I'll use this photo from **{selected_photo.get('hostname', 'web')}** as a reference. You can now ask me to generate a logo based on it! 🎨",
+                                'is_image_request': False,
+                                'photo_confirmed': True,
+                                'photo_data': selected_photo
+                            })
+                    
+                    # Refinement/rejection keywords
+                    elif any(keyword in user_msg_lower for keyword in ['no', 'different', 'search again', '❌', 'wrong']):
+                        # Remove pending request and search again
+                        original_query = mistral_chat.pending_photo_requests[uid].get('query', '')
+                        mistral_chat.pending_photo_requests.pop(uid)
+                        
+                        # Extract new search terms or use original
+                        new_query = mistral_chat.extract_photo_search_query(user_message) or f"{original_query} alternative"
+                        
+                        # Search again
+                        try:
+                            photo_result = logo_agent.search_for_photo(new_query)
+                            if photo_result.get('success'):
+                                preview_text = logo_agent.format_photo_preview(photo_result)
+                                mistral_chat.pending_photo_requests[uid] = photo_result
+                                
+                                return jsonify({
+                                    'success': True,
+                                    'response': preview_text,
+                                    'is_image_request': False,
+                                    'awaiting_photo_confirmation': True,
+                                    'photo_result': photo_result
+                                })
+                            else:
+                                return jsonify({
+                                    'success': True,
+                                    'response': f"❌ {photo_result.get('error', 'Search failed')}",
+                                    'is_image_request': False
+                                })
+                        except Exception as e:
+                            print(f"Error searching for photo: {e}")
+                            return jsonify({
+                                'success': True,
+                                'response': f"❌ Error searching for photo: {str(e)}",
+                                'is_image_request': False
+                            })
+                
+                # New photo search request
+                else:
+                    search_query = mistral_chat.extract_photo_search_query(user_message)
+                    
+                    print(f"🔍 DEBUG: New photo search, extracted query: '{search_query}'")
+                    
+                    if search_query:
+                        try:
+                            photo_result = logo_agent.search_for_photo(search_query)
+                            
+                            if photo_result.get('success'):
+                                preview_text = logo_agent.format_photo_preview(photo_result)
+                                mistral_chat.pending_photo_requests[uid] = photo_result
+                                
+                                return jsonify({
+                                    'success': True,
+                                    'response': preview_text,
+                                    'is_image_request': False,
+                                    'awaiting_photo_confirmation': True,
+                                    'photo_result': photo_result
+                                })
+                            else:
+                                return jsonify({
+                                    'success': True,
+                                    'response': f"❌ {photo_result.get('error', 'Photo search failed')}",
+                                    'is_image_request': False
+                                })
+                        except Exception as e:
+                            print(f"Error in photo search: {e}")
+                            # Fall through to normal Mistral response
+        
         # Chat with Mistral AI (pass user_id for logo confirmation tracking)
-        response_text, is_image_request, image_prompt, logo_preview = mistral_chat.chat(
+        response_text, is_image_request, image_prompt, extra_data = mistral_chat.chat(
             user_message, 
             conversation_history,
-            user_id=uid
+            user_id=uid,
+            use_web_search=use_web_search  # Pass the actual toggle state
         )
         
         # If logo preview data is returned, send preview for confirmation
-        if logo_preview and not is_image_request:
+        if extra_data and not is_image_request and extra_data.get('request_data'):
             return jsonify({
                 'success': True,
                 'response': response_text,
                 'is_image_request': False,
                 'awaiting_confirmation': True,
                 'logo_preview': {
-                    'extracted_features': logo_preview.get('extracted_visual_features', {}),
-                    'final_prompt': logo_preview.get('final_diffusion_prompt', ''),
-                    'confidence': logo_preview.get('confidence', 'medium'),
-                    'search_results': logo_preview.get('search_results', [])
+                    'extracted_features': extra_data.get('extracted_visual_features', {}),
+                    'final_prompt': extra_data.get('final_diffusion_prompt', ''),
+                    'confidence': extra_data.get('confidence', 'medium'),
+                    'search_results': extra_data.get('search_results', [])
                 }
             })
         

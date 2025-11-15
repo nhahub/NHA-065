@@ -9,12 +9,15 @@ let currentSettings = {
     height: 1024,
     use_ip_adapter: false,
     ip_adapter_scale: 0.5,
-    reference_image: null
+    reference_image: null,
+    use_web_search: false
 };
 
 let conversationHistory = [];
 let mistralConversationHistory = [];
 let availableLoras = [];
+let searchHistory = [];  // Track recent searches
+let selectedPhotoIndex = null;  // Track which photo user selects from grid
 
 // Return Authorization headers if an auth token is available
 function getAuthHeaders() {
@@ -87,6 +90,8 @@ document.addEventListener('DOMContentLoaded', () => {
     loadAvailableLoras();
     updateUserInfo();
     focusInput();
+    initKeyboardShortcuts();
+    loadSearchHistory();
 });
 
 // Focus input on load
@@ -106,6 +111,33 @@ function handleKeyPress(event) {
         event.preventDefault();
         sendMessage();
     }
+}
+
+// Initialize keyboard shortcuts
+function initKeyboardShortcuts() {
+    document.addEventListener('keydown', (event) => {
+        // Ctrl/Cmd + K: Focus search
+        if ((event.ctrlKey || event.metaKey) && event.key === 'k') {
+            event.preventDefault();
+            document.getElementById('promptInput').focus();
+        }
+        
+        // Escape: Close modals or cancel
+        if (event.key === 'Escape') {
+            const settingsModal = document.getElementById('settingsModal');
+            if (settingsModal && settingsModal.classList.contains('active')) {
+                toggleSettings();
+            }
+        }
+        
+        // Ctrl/Cmd + Enter: Confirm selection (when photo grid is visible)
+        if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+            const confirmBtn = document.querySelector('.photo-grid .confirm-btn');
+            if (confirmBtn && !confirmBtn.disabled) {
+                confirmBtn.click();
+            }
+        }
+    });
 }
 
 // Use example prompt
@@ -150,9 +182,19 @@ async function sendMessage() {
     // Show typing indicator instead of full loading overlay
     const typingIndicator = addTypingIndicator();
     
+    // Save to search history if it looks like a search query
+    if (prompt.toLowerCase().includes('search') || prompt.toLowerCase().includes('find')) {
+        const query = prompt.replace(/search|find|for|a|photo|image|logo|of/gi, '').trim();
+        if (query) saveSearchToHistory(query);
+    }
+    
     try {
         // First, try to chat with Mistral AI
         const authHeaders = getAuthHeaders();
+        
+        // Debug log
+        console.log('Sending message with web search:', currentSettings.use_web_search);
+        
         const chatResponse = await fetch('/api/chat', {
             method: 'POST',
             headers: {
@@ -161,7 +203,8 @@ async function sendMessage() {
             },
             body: JSON.stringify({
                 message: prompt,
-                conversation_history: mistralConversationHistory
+                conversation_history: mistralConversationHistory,
+                use_web_search: currentSettings.use_web_search
             })
         });
         
@@ -181,6 +224,23 @@ async function sendMessage() {
             if (chatData.awaiting_confirmation && chatData.logo_preview) {
                 // Display logo preview with extracted features
                 const previewMsg = addLogoPreviewMessage(chatData.response, chatData.logo_preview);
+                
+                // Add to Mistral conversation history
+                mistralConversationHistory.push({
+                    role: 'assistant',
+                    content: chatData.response
+                });
+                
+                // Enable send button for user to confirm/refine
+                sendBtn.disabled = false;
+                focusInput();
+                return;
+            }
+            
+            // Check if web search returned a photo for confirmation
+            if (chatData.awaiting_photo_confirmation && chatData.photo_result) {
+                // Display photo preview with confirmation options
+                const photoPreviewMsg = addPhotoPreviewMessage(chatData.response, chatData.photo_result);
                 
                 // Add to Mistral conversation history
                 mistralConversationHistory.push({
@@ -400,7 +460,7 @@ function addTypingIndicator() {
     return typingDiv;
 }
 
-// Add generating indicator (for image generation)
+// Add generating indicator (for image generation) - ENHANCED with progress
 function addGeneratingIndicator() {
     const messages = document.getElementById('messages');
     const generatingDiv = document.createElement('div');
@@ -412,7 +472,13 @@ function addGeneratingIndicator() {
         <div class="message-content">
             <div class="generating-status">
                 <div class="generating-spinner"></div>
-                <span class="generating-text">Generating your logo<span class="dots"></span></span>
+                <div class="generating-progress">
+                    <span class="generating-text">Generating your logo</span>
+                    <span class="dots"></span>
+                    <div class="progress-steps">
+                        <span class="step active">🎨 Initializing</span>
+                    </div>
+                </div>
             </div>
         </div>
     `;
@@ -420,10 +486,45 @@ function addGeneratingIndicator() {
     messages.appendChild(generatingDiv);
     scrollToBottom();
     
-    // Animate the dots
-    animateGeneratingDots();
+    // Animate progress steps
+    animateGeneratingProgress();
     
     return generatingDiv;
+}
+
+// Animate generating progress with steps
+function animateGeneratingProgress() {
+    const steps = [
+        '🎨 Initializing...',
+        '🔍 Analyzing prompt...',
+        '✨ Generating image...',
+        '🎯 Finalizing...'
+    ];
+    
+    let stepIndex = 0;
+    let dotCount = 0;
+    
+    window.generatingProgressInterval = setInterval(() => {
+        const stepElement = document.querySelector('.progress-steps .step');
+        const dotsElement = document.querySelector('.generating-text .dots');
+        
+        if (!stepElement) {
+            clearInterval(window.generatingProgressInterval);
+            return;
+        }
+        
+        // Update dots
+        dotCount = (dotCount + 1) % 4;
+        if (dotsElement) {
+            dotsElement.textContent = '.'.repeat(dotCount);
+        }
+        
+        // Update step every 2 seconds
+        if (dotCount === 0) {
+            stepIndex = (stepIndex + 1) % steps.length;
+            stepElement.textContent = steps[stepIndex];
+        }
+    }, 500);
 }
 
 // Remove generating indicator
@@ -432,10 +533,14 @@ function removeGeneratingIndicator() {
     if (indicator) {
         indicator.remove();
     }
-    // Clear the animation interval
+    // Clear both animation intervals
     if (window.generatingDotsInterval) {
         clearInterval(window.generatingDotsInterval);
         window.generatingDotsInterval = null;
+    }
+    if (window.generatingProgressInterval) {
+        clearInterval(window.generatingProgressInterval);
+        window.generatingProgressInterval = null;
     }
 }
 
@@ -588,6 +693,7 @@ function toggleSettings() {
     
     // Load current settings
     const useLoraToggle = document.getElementById('useLoraToggle');
+    const useWebSearchToggle = document.getElementById('useWebSearchToggle');
     const loraSelect = document.getElementById('loraSelect');
     const stepsSlider = document.getElementById('stepsSlider');
     const widthSlider = document.getElementById('widthSlider');
@@ -596,6 +702,9 @@ function toggleSettings() {
     if (useLoraToggle) {
         useLoraToggle.checked = currentSettings.use_lora;
         toggleLoraSettings(); // Show/hide LoRA selection based on checkbox
+    }
+    if (useWebSearchToggle) {
+        useWebSearchToggle.checked = currentSettings.use_web_search;
     }
     if (loraSelect && currentSettings.lora_filename) {
         loraSelect.value = currentSettings.lora_filename;
@@ -653,6 +762,12 @@ function toggleIpAdapter(enabled) {
     referenceContent.style.display = enabled ? 'block' : 'none';
 }
 
+// Toggle Web Search
+function toggleWebSearch() {
+    const webSearchToggle = document.getElementById('useWebSearchToggle');
+    currentSettings.use_web_search = webSearchToggle ? webSearchToggle.checked : false;
+}
+
 // Handle image upload
 function handleImageUpload(event) {
     const file = event.target.files[0];
@@ -693,6 +808,8 @@ document.addEventListener('change', (e) => {
         currentSettings.use_lora = e.target.checked;
     } else if (e.target.id === 'loraSelect') {
         currentSettings.lora_filename = e.target.value || null;
+    } else if (e.target.id === 'useWebSearchToggle') {
+        currentSettings.use_web_search = e.target.checked;
     }
 });
 
@@ -1085,6 +1202,98 @@ function addLogoPreviewMessage(text, logoPreview) {
     return messageDiv;
 }
 
+// Add photo preview message with confirmation buttons (UPDATED for multi-result grid)
+function addPhotoPreviewMessage(text, photoResult) {
+    const messages = document.getElementById('messages');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message assistant';
+    
+    const avatar = '<img src="/photos/zypher.jpeg" alt="AI" class="avatar-logo">';
+    
+    // Build grid of results
+    const results = photoResult.results || [];
+    let gridHTML = '<div class="photo-grid">';
+    
+    results.forEach((result, index) => {
+        const trustBadge = result.is_trusted ? '<span class="trust-badge trusted">✓ Trusted</span>' : 
+                          result.is_official ? '<span class="trust-badge official">Official</span>' : '';
+        
+        gridHTML += `
+            <div class="photo-grid-item" data-index="${index}" onclick="selectPhotoFromGrid(${index})">
+                <div class="photo-grid-image">
+                    <img src="${escapeHtml(result.image_url)}" alt="${escapeHtml(result.title)}" 
+                         onerror="this.parentElement.innerHTML='<div class=\\'image-error\\'>⚠️ Failed to load</div>'">
+                    ${trustBadge}
+                    <div class="selection-overlay">
+                        <div class="selection-check">✓</div>
+                    </div>
+                </div>
+                <div class="photo-grid-info">
+                    <div class="photo-title">${escapeHtml(result.title)}</div>
+                    <div class="photo-source">${escapeHtml(result.hostname || 'Unknown source')}</div>
+                </div>
+            </div>
+        `;
+    });
+    
+    gridHTML += '</div>';
+    
+    messageDiv.innerHTML = `
+        <div class="message-avatar">${avatar}</div>
+        <div class="message-content">
+            <div class="message-text markdown-content">${typeof marked !== 'undefined' ? marked.parse(text) : escapeHtml(text)}</div>
+            
+            <div class="photo-preview-card">
+                <div class="preview-header">
+                    <span class="preview-icon">🔍</span>
+                    <span class="preview-title">Found ${results.length} Results</span>
+                </div>
+                
+                ${gridHTML}
+                
+                <div class="preview-actions">
+                    <button class="preview-btn confirm-btn" onclick="confirmPhotoSelection()" disabled>
+                        <span>✅</span> Use Selected Image
+                    </button>
+                    <button class="preview-btn refine-btn" onclick="refinePhotoSearch()">
+                        <span>🔄</span> Search Again
+                    </button>
+                </div>
+                <div class="keyboard-hint">
+                    💡 Tip: Click an image to select, then confirm • Press Esc to cancel
+                </div>
+            </div>
+        </div>
+    `;
+    
+    messages.appendChild(messageDiv);
+    scrollToBottom();
+    
+    return messageDiv;
+}
+
+// Select photo from grid
+function selectPhotoFromGrid(index) {
+    selectedPhotoIndex = index;
+    
+    // Update UI - remove previous selection
+    document.querySelectorAll('.photo-grid-item').forEach(item => {
+        item.classList.remove('selected');
+    });
+    
+    // Add selection to clicked item
+    const selectedItem = document.querySelector(`.photo-grid-item[data-index="${index}"]`);
+    if (selectedItem) {
+        selectedItem.classList.add('selected');
+    }
+    
+    // Enable confirm button
+    const confirmBtn = document.querySelector('.photo-preview-card .confirm-btn');
+    if (confirmBtn) {
+        confirmBtn.disabled = false;
+    }
+}
+
 // Confirm logo generation
 async function confirmLogoGeneration() {
     // Send confirmation message
@@ -1099,6 +1308,55 @@ async function refineLogoRequest() {
     const input = document.getElementById('promptInput');
     input.value = 'no, search again';
     await sendMessage();
+}
+
+// Confirm photo selection
+async function confirmPhotoSelection() {
+    if (selectedPhotoIndex === null) {
+        alert('Please select an image first');
+        return;
+    }
+    
+    // Send confirmation message with selected index
+    const input = document.getElementById('promptInput');
+    input.value = `yes, use image ${selectedPhotoIndex}`;
+    selectedPhotoIndex = null;  // Reset selection
+    await sendMessage();
+}
+
+// Refine photo search
+async function refinePhotoSearch() {
+    selectedPhotoIndex = null;  // Reset selection
+    // Send refinement message
+    const input = document.getElementById('promptInput');
+    input.value = 'no, search for a different photo';
+    await sendMessage();
+}
+
+// Search history management
+function loadSearchHistory() {
+    const saved = localStorage.getItem('searchHistory');
+    if (saved) {
+        try {
+            searchHistory = JSON.parse(saved);
+        } catch (e) {
+            searchHistory = [];
+        }
+    }
+}
+
+function saveSearchToHistory(query) {
+    if (!query || query.trim().length === 0) return;
+    
+    // Remove duplicates and add to front
+    searchHistory = searchHistory.filter(q => q !== query);
+    searchHistory.unshift(query);
+    
+    // Keep only last 10
+    searchHistory = searchHistory.slice(0, 10);
+    
+    // Save to localStorage
+    localStorage.setItem('searchHistory', JSON.stringify(searchHistory));
 }
 
 // Utility: Escape HTML

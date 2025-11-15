@@ -22,6 +22,7 @@ class LogoReferenceAgent:
     def __init__(self):
         self.brave_api_key = os.getenv('BRAVE_SEARCH_API_KEY', '')
         self.brave_search_endpoint = 'https://api.search.brave.com/res/v1/web/search'
+        self.brave_image_search_endpoint = 'https://api.search.brave.com/res/v1/images/search'
         
         if not self.brave_api_key or self.brave_api_key == 'your_brave_api_key_here':
             print("⚠️  WARNING: BRAVE_SEARCH_API_KEY not set in .env file")
@@ -429,5 +430,129 @@ class LogoReferenceAgent:
         preview_lines.append(f"_{result['final_diffusion_prompt']}_")
         
         preview_lines.append("\n✅ **Confirm** to generate | ❌ **Refine** to search again")
+        
+        return '\n'.join(preview_lines)
+    
+    def search_for_photo(self, query: str, max_results: int = 3) -> Dict:
+        """
+        Search for multiple photos/logos using Brave Web Search API with image results.
+        
+        Args:
+            query (str): Search query for the photo/logo
+            max_results (int): Maximum number of results to return (default 3 for grid)
+            
+        Returns:
+            Dict: Search results with multiple images, titles, sources, and metadata
+        """
+        if not self.brave_api_key or self.brave_api_key == 'your_brave_api_key_here':
+            return {
+                'success': False,
+                'error': 'Brave Search API key not configured. Please add BRAVE_SEARCH_API_KEY to .env'
+            }
+        
+        try:
+            headers = {
+                'Accept': 'application/json',
+                'X-Subscription-Token': self.brave_api_key
+            }
+            
+            # Use web search endpoint which returns mixed results including images
+            params = {
+                'q': f"{query} logo image",  # Add 'logo image' to get better image results
+                'count': max_results * 3  # Get more results to filter better ones
+            }
+            
+            response = requests.get(
+                self.brave_search_endpoint,  # Use web search endpoint
+                headers=headers,
+                params=params,
+                timeout=10
+            )
+            
+            if response.status_code == 401:
+                return {
+                    'success': False,
+                    'error': 'Invalid Brave Search API key. Please check your BRAVE_SEARCH_API_KEY in .env'
+                }
+            
+            response.raise_for_status()
+            data = response.json()
+            
+            # Try to get image results from mixed results
+            web_results = data.get('web', {}).get('results', [])
+            
+            # Collect multiple results with images
+            image_results = []
+            official_domains = ['com', 'org', 'net']  # Could be brand's official domain
+            
+            for result in web_results:
+                if len(image_results) >= max_results:
+                    break
+                    
+                # Extract image URL from thumbnail
+                image_url = ''
+                if result.get('thumbnail', {}).get('src'):
+                    image_url = result['thumbnail']['src']
+                
+                if not image_url:
+                    continue
+                
+                # Determine if it's an official/trusted source
+                hostname = result.get('meta_url', {}).get('hostname', '').lower()
+                is_official = any(domain in hostname for domain in official_domains)
+                is_trusted = hostname in ['wikipedia.org', 'wikimedia.org', 'commons.wikimedia.org']
+                
+                image_results.append({
+                    'image_url': image_url,
+                    'title': result.get('title', 'Untitled'),
+                    'source': result.get('url', ''),
+                    'description': result.get('description', ''),
+                    'hostname': hostname,
+                    'is_official': is_official,
+                    'is_trusted': is_trusted
+                })
+            
+            if not image_results:
+                return {
+                    'success': False,
+                    'error': f'No images found for "{query}". Try a different search term.'
+                }
+            
+            return {
+                'success': True,
+                'results': image_results,  # Now returns multiple results
+                'query': query,
+                'total_results': len(image_results)
+            }
+            
+        except requests.exceptions.Timeout:
+            return {
+                'success': False,
+                'error': 'Search request timed out. Please try again.'
+            }
+        except Exception as e:
+            print(f"Error searching for photo: {e}")
+            return {
+                'success': False,
+                'error': f'Search error: {str(e)}'
+            }
+    
+    def format_photo_preview(self, photo_result: Dict) -> str:
+        """
+        Format the photo search results for user preview (multiple results).
+        
+        Args:
+            photo_result (Dict): Result from search_for_photo
+            
+        Returns:
+            str: Formatted preview text
+        """
+        if not photo_result.get('success'):
+            return f"❌ **Search Failed**\n\n{photo_result.get('error', 'Unknown error')}"
+        
+        preview_lines = []
+        preview_lines.append("🔍 **Photos Found from Web Search**\n")
+        preview_lines.append(f"**Found {photo_result.get('total_results', 0)} results for:** _{photo_result.get('query', '')}_\n")
+        preview_lines.append("Select the best match below:")
         
         return '\n'.join(preview_lines)

@@ -298,6 +298,18 @@
                 <!-- Generation Settings Section -->
                 <div class="settings-section">
                     <h3 class="settings-section-title">Generation Settings</h3>
+                    
+                    <!-- Web Search Toggle -->
+                    <div class="setting-group">
+                        <label class="setting-label checkbox-label">
+                            <input type="checkbox" id="useWebSearchToggle" class="settings-checkbox"
+                                onchange="toggleWebSearch()">
+                            <span class="checkmark"></span>
+                            Enable Web Search for Photos/Logos
+                        </label>
+                        <p class="setting-description">Allow AI to search the web for reference photos/logos when you ask for specific images</p>
+                    </div>
+                    
                     <div class="setting-group">
                         <label class="setting-label checkbox-label">
                             <input type="checkbox" id="useLoraToggle" class="settings-checkbox"

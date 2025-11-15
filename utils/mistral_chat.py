@@ -24,6 +24,9 @@ class MistralChatManager:
         # Track pending logo requests awaiting confirmation
         self.pending_logo_requests = {}  # user_id -> logo_request_data
         
+        # Track pending photo search requests awaiting confirmation
+        self.pending_photo_requests = {}  # user_id -> photo_request_data
+        
         if not self.api_key or self.api_key == 'your_mistral_api_key_here':
             print("⚠️  WARNING: MISTRAL_API_KEY not set in .env file")
             print("   Get your API key from: https://console.mistral.ai/api-keys/")
@@ -52,6 +55,75 @@ class MistralChatManager:
         
         return has_action and has_target
     
+    def is_photo_search_request(self, text: str) -> bool:
+        """
+        Detect if the user message is requesting to search for a specific photo/logo
+        
+        Args:
+            text (str): User message
+            
+        Returns:
+            bool: True if requesting photo search
+        """
+        # Keywords that indicate photo search intent
+        search_keywords = [
+            r'\b(search|find|look|get|fetch|show|display)\b',
+            r'\b(photo|image|picture|logo|pic)\b',
+            r'\b(of|for)\b'
+        ]
+        
+        text_lower = text.lower()
+        
+        # Check if message contains search action, target, and context
+        has_search_action = bool(re.search(search_keywords[0], text_lower))
+        has_target = bool(re.search(search_keywords[1], text_lower))
+        has_context = bool(re.search(search_keywords[2], text_lower))
+        
+        # Also check for specific patterns like "search for a photo of X"
+        specific_patterns = [
+            r'\b(search|find|get|fetch|show).*?(photo|image|logo|picture).*?(of|for)\b',
+            r'\b(photo|image|logo|picture).*?(of|for)\b.*\w+',
+        ]
+        
+        for pattern in specific_patterns:
+            if re.search(pattern, text_lower):
+                return True
+        
+        return has_search_action and has_target and has_context
+    
+    def extract_photo_search_query(self, text: str) -> Optional[str]:
+        """
+        Extract the subject/query for photo search from user message
+        
+        Args:
+            text (str): User message
+            
+        Returns:
+            Optional[str]: Extracted search query or None
+        """
+        # Patterns to extract the subject - more flexible to handle various phrasings
+        patterns = [
+            # "search for the BMW logo" -> captures "the BMW logo"
+            r'(?:search|find|get|fetch|show|display).*?(?:for|a|an|the)\s+(.*?(?:logo|image|photo|picture))',
+            # "search for a photo of BMW" -> captures "BMW"
+            r'(?:search|find|get|fetch|show|display).*?(?:photo|image|logo|picture).*?(?:of|for)\s+([^.!?]+)',
+            # "photo of BMW" -> captures "BMW"
+            r'(?:photo|image|logo|picture).*?(?:of|for)\s+([^.!?]+)',
+            # Fallback: just take everything after search action
+            r'(?:search|find|get|fetch|show|display)\s+(?:for\s+)?(?:a\s+)?(?:an\s+)?(?:the\s+)?(.+)',
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text.lower())
+            if match:
+                query = match.group(1).strip()
+                # Clean up common trailing words
+                query = re.sub(r'\s+(please|thanks|thank you)$', '', query)
+                if query and len(query) > 2:  # Ensure we got something meaningful
+                    return query
+        
+        return None
+    
     def extract_image_prompt(self, response_text: str) -> Optional[str]:
         """
         Extract image generation prompt from Mistral response if it contains JSON action
@@ -79,7 +151,7 @@ class MistralChatManager:
         
         return None
     
-    def chat(self, user_message: str, conversation_history: Optional[List[Dict]] = None, user_id: Optional[str] = None) -> Tuple[str, bool, Optional[str], Optional[Dict]]:
+    def chat(self, user_message: str, conversation_history: Optional[List[Dict]] = None, user_id: Optional[str] = None, use_web_search: bool = False) -> Tuple[str, bool, Optional[str], Optional[Dict]]:
         """
         Send a message to Mistral AI and get response
         
@@ -87,9 +159,10 @@ class MistralChatManager:
             user_message (str): User's message
             conversation_history (Optional[List[Dict]]): Previous messages in format [{"role": "user/assistant", "content": "..."}]
             user_id (Optional[str]): User ID for tracking pending requests
+            use_web_search (bool): Whether web search is enabled for photos/logos
             
         Returns:
-            Tuple[str, bool, Optional[str], Optional[Dict]]: (response_text, is_image_request, image_prompt, logo_preview_data)
+            Tuple[str, bool, Optional[str], Optional[Dict]]: (response_text, is_image_request, image_prompt, logo_preview_data_or_photo_result)
         """
         if not self.api_key or self.api_key == 'your_mistral_api_key_here':
             return ("⚠️ Mistral API key not configured. Please add MISTRAL_API_KEY to your .env file. Get your key from: https://console.mistral.ai/api-keys/", False, None, None)

@@ -1807,4 +1807,236 @@ input[type="range"] {
     font-size: 16px;
 }
 
+/* Photo Preview Card Styles */
+.photo-preview-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 20px;
+    margin-top: 16px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+}
+
+/* Photo Grid Layout */
+.photo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin: 20px 0;
+}
+
+.photo-grid-item {
+    background: var(--bg-input);
+    border: 2px solid transparent;
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.photo-grid-item:hover {
+    border-color: var(--accent-color);
+    transform: translateY(-4px);
+    box-shadow: 0 6px 16px rgba(16, 163, 127, 0.3);
+}
+
+.photo-grid-item.selected {
+    border-color: var(--accent-color);
+    background: rgba(16, 163, 127, 0.1);
+}
+
+.photo-grid-image {
+    position: relative;
+    width: 100%;
+    height: 180px;
+    background: var(--bg-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.photo-grid-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.image-error {
+    color: var(--text-secondary);
+    font-size: 14px;
+    text-align: center;
+    padding: 20px;
+}
+
+.selection-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(16, 163, 127, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.photo-grid-item.selected .selection-overlay {
+    opacity: 1;
+}
+
+.selection-check {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: white;
+    color: var(--accent-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    font-weight: bold;
+}
+
+/* Trust Badges */
+.trust-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    z-index: 2;
+}
+
+.trust-badge.trusted {
+    background: var(--success-color);
+    color: white;
+}
+
+.trust-badge.official {
+    background: #3b82f6;
+    color: white;
+}
+
+.photo-grid-info {
+    padding: 12px;
+}
+
+.photo-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.photo-source {
+    font-size: 12px;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.keyboard-hint {
+    margin-top: 16px;
+    padding: 12px;
+    background: rgba(16, 163, 127, 0.1);
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+/* Enhanced generating progress */
+.generating-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.progress-steps {
+    font-size: 13px;
+    color: var(--accent-color);
+    margin-top: 4px;
+}
+
+.progress-steps .step {
+    display: inline-block;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* Legacy single photo preview (keep for backward compatibility) */
+.photo-preview-image {
+    margin: 16px 0;
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--bg-input);
+    max-width: 100%;
+}
+
+.photo-preview-image img {
+    width: 100%;
+    height: auto;
+    max-height: 400px;
+    object-fit: contain;
+    display: block;
+}
+
+.image-load-error {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+.image-load-error p {
+    font-size: 14px;
+}
+
+.photo-details {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 16px 0;
+    padding: 16px;
+    background: var(--bg-input);
+    border-radius: 8px;
+}
+
+.detail-item {
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.detail-item strong {
+    color: var(--accent-color);
+    margin-right: 8px;
+    display: inline-block;
+    min-width: 80px;
+}
+
+.detail-item a {
+    color: var(--accent-color);
+    text-decoration: none;
+    word-break: break-all;
+}
+
+.detail-item a:hover {
+    text-decoration: underline;
+}
+
 .danger-btn:hover { background:#dc2626; }
