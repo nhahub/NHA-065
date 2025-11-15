@@ -11,6 +11,7 @@ from PIL import Image
 import io
 import base64
 import json
+import requests
 from models import db, User
 from utils.firebase_auth import verify_firebase_token, get_request_uid
 
@@ -50,6 +51,12 @@ with app.app_context():
 model_manager = ModelManager()
 chat_history = ChatHistoryManager()
 mistral_chat = MistralChatManager()
+
+# Store reference images for each user (in production, use Redis or database)
+user_reference_images = {}  # uid -> PIL.Image
+
+
+
 
 
 @app.route('/')
@@ -276,37 +283,81 @@ def chat_with_ai():
             
             print(f"🔍 DEBUG: Web search enabled, checking if photo search request...")
             
-            # Check if this is a photo search request
-            if mistral_chat.is_photo_search_request(user_message):
-                print(f"✅ DEBUG: Detected photo search request!")
+            # First check if there's a pending photo request (confirmation/refinement)
+            if uid and uid in mistral_chat.pending_photo_requests:
+                print(f"✅ DEBUG: User has pending photo request, checking response...")
+                user_msg_lower = user_message.lower().strip()
                 
-                # Handle photo search confirmation first
-                if uid and uid in mistral_chat.pending_photo_requests:
-                    user_msg_lower = user_message.lower().strip()
-                    
-                    # Check if user selected a specific image by index
-                    import re
-                    index_match = re.search(r'use image (\d+)', user_msg_lower)
-                    selected_index = int(index_match.group(1)) if index_match else 0
-                    
-                    # Confirmation keywords
-                    if any(keyword in user_msg_lower for keyword in ['yes', 'correct', 'use image', 'this is correct', 'looks good', 'perfect', 'use it', '✅']):
+                # Check if user selected a specific image by index
+                import re
+                index_match = re.search(r'use image (\d+)', user_msg_lower)
+                selected_index = int(index_match.group(1)) if index_match else 0
+                
+                # Confirmation keywords
+                if any(keyword in user_msg_lower for keyword in ['yes', 'correct', 'use image', 'this is correct', 'looks good', 'perfect', 'use it', '✅']):
                         photo_data = mistral_chat.pending_photo_requests.pop(uid)
                         
                         # Get the selected result from the results array
                         results = photo_data.get('results', [])
                         if results and selected_index < len(results):
                             selected_photo = results[selected_index]
-                            return jsonify({
-                                'success': True,
-                                'response': f"Perfect! I'll use this photo from **{selected_photo.get('hostname', 'web')}** as a reference. You can now ask me to generate a logo based on it! 🎨",
-                                'is_image_request': False,
-                                'photo_confirmed': True,
-                                'photo_data': selected_photo
-                            })
-                    
-                    # Refinement/rejection keywords
-                    elif any(keyword in user_msg_lower for keyword in ['no', 'different', 'search again', '❌', 'wrong']):
+                            
+                            # Download and store the image as reference for IP-Adapter
+                            try:
+                                image_url = selected_photo.get('image_url')
+                                hostname = selected_photo.get('hostname', 'web')
+                                
+                                print(f"📥 Downloading reference image from: {image_url}")
+                                
+                                # Download image with headers to avoid blocking
+                                headers = {
+                                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                                }
+                                response = requests.get(image_url, timeout=15, headers=headers, stream=True)
+                                response.raise_for_status()
+                                
+                                print(f"✅ Downloaded {len(response.content)} bytes")
+                                
+                                # Open and validate image
+                                reference_img = Image.open(io.BytesIO(response.content))
+                                reference_img = reference_img.convert('RGB')  # Ensure RGB format
+                                
+                                # Validate image size (not too small)
+                                if reference_img.size[0] < 50 or reference_img.size[1] < 50:
+                                    raise ValueError(f"Image too small: {reference_img.size}")
+                                
+                                # Store in memory
+                                user_reference_images[uid] = reference_img
+                                print(f"✅ Reference image stored for user {uid} - Size: {reference_img.size}")
+                                
+                                return jsonify({
+                                    'success': True,
+                                    'response': f"Perfect! I've saved this logo from **{hostname}** as your reference image. 🎨\n\nNow, please describe the logo you want me to create! For example:\n- \"Create a modern tech startup logo\"\n- \"Design a minimalist coffee shop logo\"\n- \"Generate a bold fitness brand logo\"\n\nI'll use your reference image to guide the style and design! 💡",
+                                    'is_image_request': False,
+                                    'photo_confirmed': True,
+                                    'reference_stored': True
+                                })
+                            except requests.exceptions.RequestException as e:
+                                print(f"❌ Network error downloading reference image: {e}")
+                                return jsonify({
+                                    'success': True,
+                                    'response': f"I had trouble downloading the image from **{hostname}** (network error). Please try searching again or describe your logo directly! 🎨",
+                                    'is_image_request': False,
+                                    'photo_confirmed': False
+                                })
+                            except Exception as e:
+                                print(f"❌ Error processing reference image: {type(e).__name__}: {e}")
+                                import traceback
+                                traceback.print_exc()
+                                return jsonify({
+                                    'success': True,
+                                    'response': f"I had trouble processing the image from **{hostname}**. Please try a different image or describe your logo directly! 🎨",
+                                    'is_image_request': False,
+                                    'photo_confirmed': False
+                                })
+                
+                # Refinement/rejection keywords
+                elif any(keyword in user_msg_lower for keyword in ['no', 'different', 'search again', '❌', 'wrong']):
                         # Remove pending request and search again
                         original_query = mistral_chat.pending_photo_requests[uid].get('query', '')
                         mistral_chat.pending_photo_requests.pop(uid)
@@ -341,39 +392,39 @@ def chat_with_ai():
                                 'response': f"❌ Error searching for photo: {str(e)}",
                                 'is_image_request': False
                             })
+            
+            # Check if this is a NEW photo search request
+            elif mistral_chat.is_photo_search_request(user_message):
+                print(f"✅ DEBUG: Detected NEW photo search request!")
                 
-                # New photo search request
-                else:
-                    search_query = mistral_chat.extract_photo_search_query(user_message)
-                    
-                    print(f"🔍 DEBUG: New photo search, extracted query: '{search_query}'")
-                    
-                    if search_query:
-                        try:
-                            photo_result = logo_agent.search_for_photo(search_query)
+                search_query = mistral_chat.extract_photo_search_query(user_message)
+                
+                print(f"🔍 DEBUG: New photo search, extracted query: '{search_query}'")
+                
+                if search_query:
+                    try:
+                        photo_result = logo_agent.search_for_photo(search_query)
+                        
+                        if photo_result.get('success'):
+                            preview_text = logo_agent.format_photo_preview(photo_result)
+                            mistral_chat.pending_photo_requests[uid] = photo_result
                             
-                            if photo_result.get('success'):
-                                preview_text = logo_agent.format_photo_preview(photo_result)
-                                mistral_chat.pending_photo_requests[uid] = photo_result
-                                
-                                return jsonify({
-                                    'success': True,
-                                    'response': preview_text,
-                                    'is_image_request': False,
-                                    'awaiting_photo_confirmation': True,
-                                    'photo_result': photo_result
-                                })
-                            else:
-                                return jsonify({
-                                    'success': True,
-                                    'response': f"❌ {photo_result.get('error', 'Photo search failed')}",
-                                    'is_image_request': False
-                                })
-                        except Exception as e:
-                            print(f"Error in photo search: {e}")
-                            # Fall through to normal Mistral response
-        
-        # Chat with Mistral AI (pass user_id for logo confirmation tracking)
+                            return jsonify({
+                                'success': True,
+                                'response': preview_text,
+                                'is_image_request': False,
+                                'awaiting_photo_confirmation': True,
+                                'photo_result': photo_result
+                            })
+                        else:
+                            return jsonify({
+                                'success': True,
+                                'response': f"❌ {photo_result.get('error', 'Photo search failed')}",
+                                'is_image_request': False
+                            })
+                    except Exception as e:
+                        print(f"Error in photo search: {e}")
+                        # Fall through to normal Mistral response        # Chat with Mistral AI (pass user_id for logo confirmation tracking)
         response_text, is_image_request, image_prompt, extra_data = mistral_chat.chat(
             user_message, 
             conversation_history,
@@ -515,10 +566,20 @@ def generate_from_chat():
         
         # Generate the image with user settings
         try:
+            # Check if user has a stored reference image
+            reference_image = user_reference_images.get(uid)
+            use_ip_adapter_auto = reference_image is not None
+            ip_adapter_scale_auto = 0.6 if reference_image else 0.5  # Higher influence for web references
+            
+            if reference_image:
+                print(f"🎨 Using stored reference image for user {uid} with IP-Adapter (scale: {ip_adapter_scale_auto})")
+            
             image = model_manager.generate_image(
                 prompt=image_prompt,
                 use_lora=use_lora,
                 lora_filename=lora_filename,
+                reference_image=reference_image,
+                ip_adapter_scale=ip_adapter_scale_auto,
                 num_inference_steps=num_steps,
                 width=width,
                 height=height
@@ -549,19 +610,31 @@ def generate_from_chat():
                     # Refresh user object to avoid stale data
                     user = models.User.query.filter_by(firebase_uid=uid).first()
                     
-                    entry = models.ChatHistory(user_id=user.id, prompt=image_prompt, image_path=image_path)
-                    models.db.session.add(entry)
+                    # Save image generation result as assistant message
+                    image_metadata = {
+                        'model': model_desc,
+                        'lora_used': lora_filename if use_lora else None,
+                        'steps': num_steps,
+                        'dimensions': f'{width}×{height}',
+                        'ip_adapter': use_ip_adapter or use_ip_adapter_auto,
+                        'ip_adapter_scale': ip_adapter_scale if use_ip_adapter else (ip_adapter_scale_auto if reference_image else None),
+                        'web_reference_used': reference_image is not None,
+                        'prompt': image_prompt
+                    }
                     
                     # Increment count
                     user.prompt_count = (user.prompt_count or 0) + 1
-                    
-                    # Commit both together
                     models.db.session.commit()
                     
                     print(f"✅ User {user.email} prompt count: {user.prompt_count}/5")
             except Exception as e:
                 print(f"❌ Database error: {e}")
                 models.db.session.rollback()
+            
+            # Clear the reference image after successful generation to save memory
+            if uid in user_reference_images:
+                del user_reference_images[uid]
+                print(f"🗑️ Cleared reference image for user {uid} to save storage")
             
             # Build model description
             model_parts = []
@@ -572,6 +645,8 @@ def generate_from_chat():
                 model_parts.append("Base Flux Schnell")
             if use_ip_adapter:
                 model_parts.append(f"IP-Adapter ({ip_adapter_scale:.1%})")
+            elif reference_image:
+                model_parts.append(f"IP-Adapter + Web Reference ({ip_adapter_scale_auto:.1%})")
             model_desc = " + ".join(model_parts)
             
             # Return success with image
@@ -580,13 +655,14 @@ def generate_from_chat():
                 'image': f"data:image/{config.IMAGE_FORMAT.lower()};base64,{img_str}",
                 'filename': filename,
                 'path': image_path,
-                'metadata': {
+                'extra_data': {
                     'model': model_desc,
                     'lora_used': lora_filename if use_lora else None,
                     'steps': num_steps,
                     'dimensions': f'{width}×{height}',
-                    'ip_adapter': use_ip_adapter,
-                    'ip_adapter_scale': ip_adapter_scale if use_ip_adapter else None,
+                    'ip_adapter': use_ip_adapter or use_ip_adapter_auto,
+                    'ip_adapter_scale': ip_adapter_scale if use_ip_adapter else (ip_adapter_scale_auto if reference_image else None),
+                    'web_reference_used': reference_image is not None,
                     'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
             })
@@ -775,7 +851,7 @@ def generate_logo():
             'image': f"data:image/{config.IMAGE_FORMAT.lower()};base64,{img_str}",
             'filename': filename,
             'path': image_path,
-            'metadata': {
+            'extra_data': {
                 'model': model_desc,
                 'lora_used': lora_filename if use_lora else None,
                 'steps': num_steps,
@@ -796,7 +872,7 @@ def generate_logo():
 @app.route('/api/history', methods=['GET'])
 @verify_firebase_token
 def get_history():
-    """Get user's chat history from database"""
+    """Get user's complete chat history from database"""
     try:
         firebase_user = getattr(request, 'firebase_user', None)
         if not firebase_user:
@@ -812,22 +888,28 @@ def get_history():
             # Get all chat history for this user, ordered by most recent first
             history_entries = models.ChatHistory.query.filter_by(user_id=user.id)\
                 .order_by(models.ChatHistory.created_at.desc())\
-                .limit(50)\
+                .limit(200)\
                 .all()
             
             history = []
             for entry in history_entries:
                 history.append({
                     'id': entry.id,
-                    'prompt': entry.prompt,
+                    'role': entry.role,
+                    'message': entry.message,
+                    'message_type': entry.message_type,
                     'image_path': entry.image_path,
+                    'extra_data': entry.metadata,
                     'timestamp': entry.created_at.isoformat() if entry.created_at else None,
-                    'preview': entry.prompt[:50] + ('...' if len(entry.prompt) > 50 else '')
+                    # For backward compatibility
+                    'prompt': entry.message if entry.role == 'user' else None,
+                    'preview': (entry.message[:80] + '...' if len(entry.message) > 80 else entry.message) if entry.message else None
                 })
             
             return jsonify({
                 'success': True,
-                'history': history
+                'history': history,
+                'total': len(history)
             })
     except Exception as e:
         return jsonify({

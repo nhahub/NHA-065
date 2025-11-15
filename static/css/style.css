@@ -831,6 +831,67 @@ body {
     letter-spacing: 0.5px;
 }
 
+/* Web Search Toggle Button (ChatGPT-style) */
+.web-search-toggle {
+    position: absolute;
+    left: 12px;
+    bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    z-index: 10;
+    user-select: none;
+}
+
+.web-search-toggle:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--text-secondary);
+    transform: translateY(-1px);
+}
+
+.web-search-toggle.active {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: white;
+}
+
+.web-search-toggle.active:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+}
+
+.web-search-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
+}
+
+.web-search-toggle.active .web-search-icon {
+    transform: scale(1.1);
+}
+
+.web-search-label {
+    white-space: nowrap;
+}
+
+/* Adjust textarea padding to account for web search button */
+.input-wrapper textarea {
+    padding-left: 145px !important;
+    padding-right: 12px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+}
+
 /* Toggle Switch */
 .toggle-switch {
     position: relative;
@@ -1028,12 +1089,15 @@ input:checked + .toggle-slider:before {
     align-items: flex-end;
     padding: 12px;
     gap: 12px;
-    transition: var(--transition);
+    transition: all 0.2s ease;
+    position: relative;
+    min-height: 60px;
 }
 
 .input-wrapper:focus-within {
     border-color: var(--accent-color);
     box-shadow: 0 0 0 3px rgba(16, 163, 127, 0.1);
+    background: rgba(255, 255, 255, 0.02);
 }
 
 #promptInput {
@@ -1045,8 +1109,29 @@ input:checked + .toggle-slider:before {
     font-family: inherit;
     resize: none;
     outline: none;
-    max-height: 200px;
-    line-height: 1.6;
+    min-height: 24px;
+    max-height: 300px;
+    line-height: 1.5;
+    overflow-y: auto;
+    scroll-behavior: smooth;
+}
+
+/* Custom scrollbar for textarea */
+#promptInput::-webkit-scrollbar {
+    width: 6px;
+}
+
+#promptInput::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#promptInput::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 3px;
+}
+
+#promptInput::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
 }
 
 #promptInput::placeholder {
@@ -1063,18 +1148,42 @@ input:checked + .toggle-slider:before {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: var(--transition);
+    transition: all 0.2s ease;
     flex-shrink: 0;
+    position: relative;
 }
 
-.send-btn:hover {
+.send-btn svg {
+    transition: all 0.2s ease;
+}
+
+.send-btn:hover:not(:disabled) {
     background: var(--accent-hover);
+    transform: translateY(-1px) scale(1.05);
+    box-shadow: 0 4px 12px rgba(16, 163, 127, 0.3);
+}
+
+.send-btn:active:not(:disabled) {
+    transform: translateY(0) scale(0.98);
 }
 
 .send-btn:disabled {
     background: var(--bg-tertiary);
     cursor: not-allowed;
-    opacity: 0.5;
+    opacity: 0.4;
+}
+
+.send-btn:disabled svg {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .input-hint {
@@ -1082,6 +1191,13 @@ input:checked + .toggle-slider:before {
     font-size: 12px;
     color: var(--text-secondary);
     margin-top: 8px;
+    line-height: 1.5;
+    opacity: 0.8;
+    transition: opacity 0.2s ease;
+}
+
+.input-hint:hover {
+    opacity: 1;
 }
 
 /* Modal */
@@ -1641,6 +1757,46 @@ input[type="range"] {
     .upload-area-inline,
     .image-preview-inline {
         width: 100%;
+    }
+
+    /* Mobile input optimizations */
+    .input-container {
+        padding: 12px;
+    }
+
+    .input-wrapper {
+        padding: 10px;
+        min-height: 54px;
+    }
+
+    #promptInput {
+        font-size: 16px; /* Prevents zoom on iOS */
+        max-height: 200px;
+    }
+
+    .web-search-toggle {
+        padding: 6px 8px;
+        font-size: 12px;
+        bottom: 10px;
+        left: 10px;
+    }
+
+    .web-search-label {
+        display: none; /* Show icon only on mobile */
+    }
+
+    .input-wrapper textarea {
+        padding-left: 56px !important; /* Smaller padding for icon-only button */
+    }
+
+    .send-btn {
+        width: 34px;
+        height: 34px;
+    }
+
+    .input-hint {
+        font-size: 11px;
+        padding: 0 4px;
     }
 }
 

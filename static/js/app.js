@@ -101,8 +101,29 @@ function focusInput() {
 
 // Auto-resize textarea
 function autoResize(textarea) {
+    // Reset height to auto to get the correct scrollHeight
     textarea.style.height = 'auto';
-    textarea.style.height = textarea.scrollHeight + 'px';
+    
+    // Calculate the new height
+    const minHeight = 24;
+    const maxHeight = window.innerWidth <= 768 ? 200 : 300; // Responsive max height
+    const newHeight = Math.min(Math.max(textarea.scrollHeight, minHeight), maxHeight);
+    
+    // Apply the new height
+    textarea.style.height = newHeight + 'px';
+    
+    // Add/remove scrollbar styling based on content
+    if (textarea.scrollHeight > maxHeight) {
+        textarea.style.overflowY = 'auto';
+    } else {
+        textarea.style.overflowY = 'hidden';
+    }
+    
+    // Update send button state based on content
+    const sendBtn = document.getElementById('sendBtn');
+    if (sendBtn && !sendBtn.disabled) {
+        sendBtn.style.opacity = textarea.value.trim() ? '1' : '0.5';
+    }
 }
 
 // Handle key press
@@ -693,7 +714,6 @@ function toggleSettings() {
     
     // Load current settings
     const useLoraToggle = document.getElementById('useLoraToggle');
-    const useWebSearchToggle = document.getElementById('useWebSearchToggle');
     const loraSelect = document.getElementById('loraSelect');
     const stepsSlider = document.getElementById('stepsSlider');
     const widthSlider = document.getElementById('widthSlider');
@@ -702,9 +722,6 @@ function toggleSettings() {
     if (useLoraToggle) {
         useLoraToggle.checked = currentSettings.use_lora;
         toggleLoraSettings(); // Show/hide LoRA selection based on checkbox
-    }
-    if (useWebSearchToggle) {
-        useWebSearchToggle.checked = currentSettings.use_web_search;
     }
     if (loraSelect && currentSettings.lora_filename) {
         loraSelect.value = currentSettings.lora_filename;
@@ -766,6 +783,38 @@ function toggleIpAdapter(enabled) {
 function toggleWebSearch() {
     const webSearchToggle = document.getElementById('useWebSearchToggle');
     currentSettings.use_web_search = webSearchToggle ? webSearchToggle.checked : false;
+}
+
+// Toggle Web Search Button (ChatGPT-style)
+function toggleWebSearchButton() {
+    const btn = document.getElementById('webSearchToggleBtn');
+    currentSettings.use_web_search = !currentSettings.use_web_search;
+    
+    if (currentSettings.use_web_search) {
+        btn.classList.add('active');
+        btn.title = 'Web search enabled - Click to disable';
+    } else {
+        btn.classList.remove('active');
+        btn.title = 'Enable web search for reference logos';
+    }
+    
+    console.log('Web search toggled:', currentSettings.use_web_search);
+}
+
+// Toggle Web Search Button (ChatGPT-style)
+function toggleWebSearchButton() {
+    const btn = document.getElementById('webSearchToggleBtn');
+    currentSettings.use_web_search = !currentSettings.use_web_search;
+    
+    if (currentSettings.use_web_search) {
+        btn.classList.add('active');
+        btn.title = 'Web search enabled - Click to disable';
+    } else {
+        btn.classList.remove('active');
+        btn.title = 'Enable web search for reference logos';
+    }
+    
+    console.log('Web search toggled:', currentSettings.use_web_search);
 }
 
 // Handle image upload

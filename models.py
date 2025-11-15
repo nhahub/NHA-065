@@ -43,5 +43,5 @@ class ChatHistory(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     prompt = db.Column(db.Text, nullable=False)
-    image_path = db.Column(db.String(255))
+    image_path = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
