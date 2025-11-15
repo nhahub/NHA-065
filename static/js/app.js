@@ -40,7 +40,7 @@ async function updateUserInfo() {
         const data = await response.json();
         if (data.success && data.profile) {
             const profile = data.profile;
-            
+
             // Update plan info display in header
             const planInfo = document.getElementById('planInfo');
             if (planInfo) {
@@ -50,7 +50,7 @@ async function updateUserInfo() {
                     const remaining = Math.max(0, 5 - (profile.prompt_count || 0));
                     const color = remaining === 0 ? '#ef4444' : (remaining <= 2 ? '#f59e0b' : '#6b7280');
                     planInfo.innerHTML = `<span style="color: ${color}; font-weight: 500;">Free Plan</span> • ${remaining}/5 prompts remaining`;
-                    
+
                     // Show upgrade link
                     if (remaining <= 5) {
                         planInfo.innerHTML += ' • <a href="/upgrade" style="color: #10a37f; text-decoration: underline; font-weight: 600;">Upgrade</a>';
@@ -61,7 +61,7 @@ async function updateUserInfo() {
             // Update user avatar and name in sidebar
             const userAvatar = document.getElementById('userAvatar');
             const userFullName = document.getElementById('userFullName');
-            
+
             if (profile.fname || profile.lname) {
                 const initials = ((profile.fname || '')[0] || '') + ((profile.lname || '')[0] || '');
                 if (userAvatar) userAvatar.textContent = initials.toUpperCase() || 'AI';
@@ -70,7 +70,7 @@ async function updateUserInfo() {
                 const defaultName = profile.email ? profile.email.split('@')[0] : 'User';
                 if (userFullName) userFullName.textContent = defaultName;
             }
-            
+
             // Store profile globally
             userProfile = profile;
         }
@@ -127,31 +127,32 @@ function newChat() {
 }
 
 // Send message
+// static/js/app.js - Update the sendMessage function around line 150-200
+
 async function sendMessage() {
     const input = document.getElementById('promptInput');
     const prompt = input.value.trim();
-    
+
     if (!prompt) return;
-    
+
     // Hide welcome screen
     document.getElementById('welcomeScreen').style.display = 'none';
-    
+
     // Add user message
     addMessage('user', prompt);
-    
+
     // Clear input
     input.value = '';
     input.style.height = 'auto';
-    
+
     // Disable send button
     const sendBtn = document.getElementById('sendBtn');
     sendBtn.disabled = true;
-    
-    // Show typing indicator instead of full loading overlay
+
+    // Show typing indicator
     const typingIndicator = addTypingIndicator();
-    
+
     try {
-        // First, try to chat with Mistral AI
         const authHeaders = getAuthHeaders();
         const chatResponse = await fetch('/api/chat', {
             method: 'POST',
@@ -164,36 +165,25 @@ async function sendMessage() {
                 conversation_history: mistralConversationHistory
             })
         });
-        
+
         const chatData = await chatResponse.json();
-        
-        // Remove typing indicator
+
         removeTypingIndicator();
-        
+
         if (chatData.success) {
-            // Add user message to Mistral conversation history
-            mistralConversationHistory.push({
-                role: 'user',
-                content: prompt
-            });
-            
-            // If Mistral detected an image generation request and needs to generate
+            mistralConversationHistory.push({ role: 'user', content: prompt });
+
             if (chatData.is_image_request && chatData.needs_generation) {
-                // Add assistant response message with streaming effect
+                // Show AI acknowledgment
                 const responseMsg = addStreamingMessage('assistant', '');
                 await streamText(chatData.response, responseMsg);
                 finalizeStreamingMessage();
-                
-                // Add to Mistral conversation history
-                mistralConversationHistory.push({
-                    role: 'assistant',
-                    content: chatData.response
-                });
-                
-                // Show "Generating your logo..." message
+
+                mistralConversationHistory.push({ role: 'assistant', content: chatData.response });
+
+                // Show generating indicator
                 const generatingIndicator = addGeneratingIndicator();
-                
-                // Now call the generate endpoint with current settings
+
                 try {
                     const generateResponse = await fetch('/api/generate-from-chat', {
                         method: 'POST',
@@ -212,27 +202,70 @@ async function sendMessage() {
                             ip_adapter_scale: currentSettings.ip_adapter_scale
                         })
                     });
-                    
+
                     const generateData = await generateResponse.json();
-                    
-                    // Remove generating indicator
                     removeGeneratingIndicator();
-                    
+
                     if (generateData.success) {
-                        // Add the generated image
-                        addMessage('assistant', '', generateData.image, generateData.metadata, generateData.filename);
+                        // Create the image message with the same format as history view
+                        const messages = document.getElementById('messages');
+                        const messageDiv = document.createElement('div');
+                        messageDiv.className = 'message assistant';
                         
-                        // Add to conversation history
+                        const fullPrompt = chatData.image_prompt || '[No refined prompt available]';
+                        
+                        messageDiv.innerHTML = `
+                            <div class="message-avatar"><img src="/photos/zypher.jpeg" alt="AI" class="avatar-logo"></div>
+                            <div class="message-content">
+                                <div class="message-text markdown-content">
+                                    <strong>Generated Image</strong><br>
+                                    <details style="margin-top: 8px;">
+                                        <summary style="cursor: pointer; color: var(--text-secondary); font-size: 0.9em;">
+                                            View full generation prompt
+                                        </summary>
+                                        <div style="margin-top: 8px; padding: 12px; background: var(--bg-secondary); border-radius: 6px; font-size: 0.85em; line-height: 1.6; white-space: pre-wrap;">
+                                            ${escapeHtml(fullPrompt)}
+                                        </div>
+                                    </details>
+                                </div>
+                                <div class="message-image">
+                                    <img src="${generateData.image}" alt="Generated logo">
+                                </div>
+                                <div class="message-metadata">
+                                    <div class="metadata-row">
+                                        <span class="metadata-label">Model:</span>
+                                        <span>${generateData.metadata.model}</span>
+                                    </div>
+                                    <div class="metadata-row">
+                                        <span class="metadata-label">Steps:</span>
+                                        <span>${generateData.metadata.steps}</span>
+                                    </div>
+                                    <div class="metadata-row">
+                                        <span class="metadata-label">Dimensions:</span>
+                                        <span>${generateData.metadata.dimensions}</span>
+                                    </div>
+                                    <div class="metadata-row">
+                                        <span class="metadata-label">Generated:</span>
+                                        <span>${generateData.metadata.timestamp}</span>
+                                    </div>
+                                    <button class="download-btn" onclick="downloadImage('${generateData.image}', '${generateData.filename}')">
+                                        Download
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                        
+                        messages.appendChild(messageDiv);
+                        scrollToBottom();
+
                         conversationHistory.push({
                             user: prompt,
                             assistant: generateData.filename,
                             timestamp: new Date().toISOString()
                         });
-                        
+
                         updateHistoryList();
-                        
-                        // 🎯 ADD THIS LINE - Update prompt count after successful generation
-                        await updateUserInfo();
+                        await updateUserInfo(); // Update prompt counter
                     } else {
                         addErrorMessage(generateData.error || 'Failed to generate image.');
                     }
@@ -241,68 +274,57 @@ async function sendMessage() {
                     removeGeneratingIndicator();
                     addErrorMessage('Failed to generate image. Please try again.');
                 }
-            } 
-            // If Mistral wants to generate but there was an error or limit reached
+            }
             else if (chatData.is_image_request) {
                 const responseMsg = addStreamingMessage('assistant', '');
                 await streamText(chatData.response, responseMsg);
                 finalizeStreamingMessage();
-                
-                mistralConversationHistory.push({
-                    role: 'assistant',
-                    content: chatData.response
-                });
-                
-                // 🎯 ADD THIS LINE - Update UI even if limit reached (to show 0/5)
+                mistralConversationHistory.push({ role: 'assistant', content: chatData.response });
                 await updateUserInfo();
             }
-            // Normal chat response with streaming
             else {
                 const responseMsg = addStreamingMessage('assistant', '');
                 await streamText(chatData.response, responseMsg);
                 finalizeStreamingMessage();
-                
-                mistralConversationHistory.push({
-                    role: 'assistant',
-                    content: chatData.response
-                });
+                mistralConversationHistory.push({ role: 'assistant', content: chatData.response });
             }
         } else {
             addErrorMessage(chatData.error || 'Chat failed. Please try again.');
         }
-        
+
     } catch (error) {
         console.error('Error:', error);
         removeTypingIndicator();
-        addErrorMessage('Network error. Please check your connection and try again.');
+        addErrorMessage('Network error. Please check your connection.');
     } finally {
         sendBtn.disabled = false;
         focusInput();
     }
 }
-
 // Add message to chat
 function addMessage(role, text, imageUrl = null, metadata = null, filename = null) {
     const messages = document.getElementById('messages');
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${role}`;
-    
+
     const avatar = role === 'user' ? '👤' : '<img src="/photos/zypher.jpeg" alt="AI" class="avatar-logo">';
-    
+
     let messageHTML = `
         <div class="message-avatar">${avatar}</div>
         <div class="message-content">
     `;
-    
+
     if (text) {
-        // Render markdown for assistant messages, plain text for user messages
         if (role === 'assistant' && typeof marked !== 'undefined') {
             messageHTML += `<div class="message-text markdown-content">${marked.parse(text)}</div>`;
         } else {
             messageHTML += `<div class="message-text">${escapeHtml(text)}</div>`;
         }
+    } else if (imageUrl) {
+        // Show "Generated:" when only image is sent
+        messageHTML += `<div class="message-text" style="font-weight:500; margin-bottom:8px; color:var(--text-secondary);">Generated:</div>`;
     }
-    
+
     if (imageUrl) {
         messageHTML += `
             <div class="message-image">
@@ -310,52 +332,26 @@ function addMessage(role, text, imageUrl = null, metadata = null, filename = nul
             </div>
         `;
     }
-    
+
     if (metadata) {
         messageHTML += `
             <div class="message-metadata">
-                <div class="metadata-row">
-                    <span class="metadata-label">Model:</span>
-                    <span>${metadata.model}</span>
-                </div>
-                <div class="metadata-row">
-                    <span class="metadata-label">Steps:</span>
-                    <span>${metadata.steps}</span>
-                </div>
-                <div class="metadata-row">
-                    <span class="metadata-label">Dimensions:</span>
-                    <span>${metadata.dimensions}</span>
-                </div>
-                ${metadata.ip_adapter ? `
-                <div class="metadata-row">
-                    <span class="metadata-label">IP-Adapter Scale:</span>
-                    <span>${(metadata.ip_adapter_scale * 100).toFixed(0)}%</span>
-                </div>
-                ` : ''}
-                <div class="metadata-row">
-                    <span class="metadata-label">Generated:</span>
-                    <span>${metadata.timestamp}</span>
-                </div>
-                ${filename ? `
-                <button class="download-btn" onclick="downloadImage('${imageUrl}', '${filename}')">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                        <polyline points="7 10 12 15 17 10"></polyline>
-                        <line x1="12" y1="15" x2="12" y2="3"></line>
-                    </svg>
-                    Download
-                </button>
-                ` : ''}
+                <div class="metadata-row"><span class="metadata-label">Model:</span><span>${metadata.model}</span></div>
+                <div class="metadata-row"><span class="metadata-label">Steps:</span><span>${metadata.steps}</span></div>
+                <div class="metadata-row"><span class="metadata-label">Dimensions:</span><span>${metadata.dimensions}</span></div>
+                ${metadata.ip_adapter ? `<div class="metadata-row"><span class="metadata-label">IP-Adapter:</span><span>${(metadata.ip_adapter_scale * 100).toFixed(0)}%</span></div>` : ''}
+                <div class="metadata-row"><span class="metadata-label">Generated:</span><span>${metadata.timestamp}</span></div>
+                ${filename ? `<button class="download-btn" onclick="downloadImage('${imageUrl}', '${filename}')">Download</button>` : ''}
             </div>
         `;
     }
-    
+
     messageHTML += `</div>`;
     messageDiv.innerHTML = messageHTML;
-    
+
     messages.appendChild(messageDiv);
     scrollToBottom();
-    
+
     return messageDiv;
 }
 
@@ -365,7 +361,7 @@ function addTypingIndicator() {
     const typingDiv = document.createElement('div');
     typingDiv.className = 'message assistant typing-indicator';
     typingDiv.id = 'typingIndicator';
-    
+
     typingDiv.innerHTML = `
         <div class="message-avatar"><img src="/photos/zypher.jpeg" alt="AI" class="avatar-logo"></div>
         <div class="message-content">
@@ -376,10 +372,10 @@ function addTypingIndicator() {
             </div>
         </div>
     `;
-    
+
     messages.appendChild(typingDiv);
     scrollToBottom();
-    
+
     return typingDiv;
 }
 
@@ -389,7 +385,7 @@ function addGeneratingIndicator() {
     const generatingDiv = document.createElement('div');
     generatingDiv.className = 'message assistant typing-indicator';
     generatingDiv.id = 'generatingIndicator';
-    
+
     generatingDiv.innerHTML = `
         <div class="message-avatar"><img src="/photos/zypher.jpeg" alt="AI" class="avatar-logo"></div>
         <div class="message-content">
@@ -399,13 +395,13 @@ function addGeneratingIndicator() {
             </div>
         </div>
     `;
-    
+
     messages.appendChild(generatingDiv);
     scrollToBottom();
-    
+
     // Animate the dots
     animateGeneratingDots();
-    
+
     return generatingDiv;
 }
 
@@ -450,19 +446,19 @@ function addStreamingMessage(role, text = '') {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${role}`;
     messageDiv.id = 'streamingMessage';
-    
+
     const avatar = role === 'user' ? '👤' : '<img src="/photos/zypher.jpeg" alt="AI" class="avatar-logo">';
-    
+
     messageDiv.innerHTML = `
         <div class="message-avatar">${avatar}</div>
         <div class="message-content">
             <div class="message-text markdown-content" id="streamingText">${text}</div>
         </div>
     `;
-    
+
     messages.appendChild(messageDiv);
     scrollToBottom();
-    
+
     return messageDiv;
 }
 
@@ -496,21 +492,21 @@ function finalizeStreamingMessage() {
 async function streamText(text, messageDiv) {
     const textElement = messageDiv.querySelector('.message-text');
     if (!textElement) return;
-    
+
     // Split into words for more natural streaming
     const words = text.split(' ');
     let currentText = '';
-    
+
     for (let i = 0; i < words.length; i++) {
         currentText += (i > 0 ? ' ' : '') + words[i];
-        
+
         // Render as markdown
         if (typeof marked !== 'undefined') {
             textElement.innerHTML = marked.parse(currentText);
         } else {
             textElement.textContent = currentText;
         }
-        
+
         scrollToBottom();
         // Adjust delay for speed (lower = faster)
         await new Promise(resolve => setTimeout(resolve, 30));
@@ -568,7 +564,7 @@ function toggleSidebar() {
 function toggleSettings() {
     const modal = document.getElementById('settingsModal');
     modal.classList.toggle('active');
-    
+
     // Load current settings
     const useLoraToggle = document.getElementById('useLoraToggle');
     const loraSelect = document.getElementById('loraSelect');
@@ -601,7 +597,7 @@ function toggleSettings() {
         if (fnameEl) fnameEl.value = '';
         if (lnameEl) lnameEl.value = '';
     }
-    
+
     // Reload LoRA list to get latest
     if (modal.classList.contains('active')) {
         loadAvailableLoras();
@@ -640,19 +636,19 @@ function toggleIpAdapter(enabled) {
 function handleImageUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
-    
+
     // Validate file type
     if (!file.type.startsWith('image/')) {
         alert('Please upload an image file (JPG, PNG, WEBP)');
         return;
     }
-    
+
     // Store file
     currentSettings.reference_image = file;
-    
+
     // Show preview
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = function (e) {
         document.getElementById('previewImgInline').src = e.target.result;
         document.getElementById('uploadAreaInline').style.display = 'none';
         document.getElementById('imagePreviewInline').style.display = 'block';
@@ -684,11 +680,11 @@ async function loadModelStatus() {
     const statusDiv = document.getElementById('modelStatus');
     statusDiv.style.display = 'block';
     statusDiv.innerHTML = '<p>Loading...</p>';
-    
+
     try {
-    const response = await fetch('/api/model/status', { headers: getAuthHeaders() });
+        const response = await fetch('/api/model/status', { headers: getAuthHeaders() });
         const data = await response.json();
-        
+
         if (data.success) {
             const model = data.model;
             statusDiv.innerHTML = `
@@ -714,7 +710,7 @@ async function loadHistory() {
     try {
         const response = await fetch('/api/history', { headers: getAuthHeaders() });
         const data = await response.json();
-        
+
         if (data.success && data.history) {
             conversationHistory = data.history;
             updateHistoryList();
@@ -727,27 +723,29 @@ async function loadHistory() {
 // Update history list in sidebar
 function updateHistoryList() {
     const historyList = document.getElementById('historyList');
-    
+
     if (conversationHistory.length === 0) {
         historyList.innerHTML = '<p style="color: var(--text-secondary); font-size: 13px; padding: 12px;">No history yet</p>';
         return;
     }
-    
+
     historyList.innerHTML = conversationHistory
         .map((item) => {
-            const text = item.preview || item.prompt || 'Untitled';
+            // Use user's original message first
+            const userText = item.user_message || item.prompt || '';
+            const fallback = item.ai_response || item.image_prompt || 'Untitled';
+            const displayText = userText || fallback;
+            const preview = displayText.length > 50 ? displayText.substring(0, 50) + '...' : displayText;
             const timestamp = item.timestamp ? new Date(item.timestamp).toLocaleDateString() : '';
+
             return `
                 <div class="history-item-wrapper">
-                    <button class="history-item" onclick="viewHistoryItem(${item.id})" title="${escapeHtml(item.prompt)}">
-                        <span class="history-item-text">${escapeHtml(text)}</span>
+                    <button class="history-item" onclick="viewHistoryItem(${item.id})" title="${escapeHtml(displayText)}">
+                        <span class="history-item-text">${escapeHtml(preview)}</span>
                         ${timestamp ? `<span class="history-item-date">${timestamp}</span>` : ''}
                     </button>
                     <button class="history-item-delete" onclick="deleteHistoryItem(event, ${item.id})" title="Delete">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="3 6 5 6 21 6"></polyline>
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                        </svg>
+                        Delete
                     </button>
                 </div>
             `;
@@ -755,57 +753,94 @@ function updateHistoryList() {
         .join('');
 }
 
-// View history item
+// View history item 
 async function viewHistoryItem(historyId) {
     try {
         const response = await fetch(`/api/history/${historyId}`, { headers: getAuthHeaders() });
         const data = await response.json();
-        
-        if (data.success && data.item) {
-            // Clear current conversation
+
+        if (data.success && data.history) {
             document.getElementById('messages').innerHTML = '';
             document.getElementById('welcomeScreen').style.display = 'none';
-            
-            // Show the historical prompt and image
-            const item = data.item;
-            addMessage('user', item.prompt);
-            
-            if (item.image_path) {
-                // Check if we can load the image
-                const imageName = item.image_path.split('/').pop();
-                const imageUrl = `/outputs/${imageName}`;
-                
-                addMessage('assistant', '', imageUrl, {
-                    model: 'Historical generation',
-                    steps: '-',
-                    dimensions: '-',
-                    timestamp: item.timestamp ? new Date(item.timestamp).toLocaleString() : 'Unknown'
-                }, imageName);
+
+            const item = data.history;
+
+            // 1. Show user's original message
+            const userMessage = item.user_message || 'Generate image';
+            addMessage('user', userMessage);
+
+            // 2. Show AI's text response (if exists)
+            if (item.ai_response && item.message_type !== 'image') {
+                addMessage('assistant', item.ai_response);
             }
+
+            // 3. Show the generated image using the SAME structure as sendMessage()
+            if (item.image_path && item.message_type === 'image') {
+                const imageName = item.image_path.split('/').pop() || item.image_path.split('\\').pop();
+                const imageUrl = `/outputs/${imageName}`;
+                const fullPrompt = item.image_prompt || '[No refined prompt available]';
+                
+                // Use the same format as in sendMessage() for consistency
+                const messages = document.getElementById('messages');
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'message assistant';
+                
+                messageDiv.innerHTML = `
+                    <div class="message-avatar"><img src="/photos/zypher.jpeg" alt="AI" class="avatar-logo"></div>
+                    <div class="message-content">
+                        <div class="message-text markdown-content">
+                            <strong>Generated Image</strong><br>
+                            <details style="margin-top: 8px;">
+                                <summary style="cursor: pointer; color: var(--text-secondary); font-size: 0.9em;">
+                                    View full generation prompt
+                                </summary>
+                                <div style="margin-top: 8px; padding: 12px; background: var(--bg-secondary); border-radius: 6px; font-size: 0.85em; line-height: 1.6; white-space: pre-wrap;">
+                                    ${escapeHtml(fullPrompt)}
+                                </div>
+                            </details>
+                        </div>
+                        <div class="message-image">
+                            <img src="${imageUrl}" alt="Generated logo" 
+                                onerror="this.parentElement.innerHTML='<p style=\\'color: var(--text-secondary); padding: 20px; text-align: center;\\'>Image not found</p>'">
+                        </div>
+                        <div class="message-metadata">
+                            <div class="metadata-row">
+                                <span class="metadata-label">Generated:</span>
+                                <span>${item.timestamp ? new Date(item.timestamp).toLocaleString() : 'Unknown'}</span>
+                            </div>
+                            <button class="download-btn" onclick="downloadImage('${imageUrl}', '${imageName}')">
+                                Download
+                            </button>
+                        </div>
+                    </div>
+                `;
+                messages.appendChild(messageDiv);
+            }
+            
+            scrollToBottom();
         } else {
-            alert('Could not load history item: ' + (data.error || 'Unknown error'));
+            alert('Could not load history item');
         }
     } catch (error) {
-        console.error('Error loading history item:', error);
+        console.error('Error:', error);
         alert('Failed to load history item');
     }
 }
-
 // Delete history item
 async function deleteHistoryItem(event, historyId) {
     event.stopPropagation(); // Prevent triggering the view action
-    
+
     if (!confirm('Are you sure you want to delete this history item?')) {
         return;
     }
-    
+
     try {
         const response = await fetch(`/api/history/${historyId}`, {
             method: 'DELETE',
             headers: getAuthHeaders()
         });
         const data = await response.json();
-        
+
         if (data.success) {
             // Remove from local array
             conversationHistory = conversationHistory.filter(item => item.id !== historyId);
@@ -824,14 +859,14 @@ async function clearAllHistory() {
     if (!confirm('Are you sure you want to delete ALL history? This cannot be undone.')) {
         return;
     }
-    
+
     try {
         const response = await fetch('/api/history/clear', {
             method: 'POST',
             headers: getAuthHeaders()
         });
         const data = await response.json();
-        
+
         if (data.success) {
             conversationHistory = [];
             updateHistoryList();
@@ -864,11 +899,11 @@ async function loadAvailableLoras() {
 function updateLoraSelect() {
     const loraSelect = document.getElementById('loraSelect');
     const loraCount = document.getElementById('loraCount');
-    
+
     if (!loraSelect) return;
-    
+
     loraSelect.innerHTML = '';
-    
+
     if (availableLoras.length === 0) {
         loraSelect.innerHTML = '<option value="">No LoRA models found</option>';
         if (loraCount) loraCount.textContent = '0 LoRA models available';
@@ -878,7 +913,7 @@ function updateLoraSelect() {
         defaultOption.value = '';
         defaultOption.textContent = '-- Select a LoRA --';
         loraSelect.appendChild(defaultOption);
-        
+
         // Add LoRA options
         availableLoras.forEach(lora => {
             const option = document.createElement('option');
@@ -886,7 +921,7 @@ function updateLoraSelect() {
             option.textContent = lora;
             loraSelect.appendChild(option);
         });
-        
+
         if (loraCount) loraCount.textContent = `${availableLoras.length} LoRA model${availableLoras.length !== 1 ? 's' : ''} available`;
     }
 }
@@ -895,7 +930,7 @@ function updateLoraSelect() {
 function toggleLoraSettings() {
     const useLoraToggle = document.getElementById('useLoraToggle');
     const loraSelectionGroup = document.getElementById('loraSelectionGroup');
-    
+
     if (useLoraToggle && loraSelectionGroup) {
         if (useLoraToggle.checked) {
             loraSelectionGroup.style.display = 'block';
@@ -973,7 +1008,7 @@ async function saveUserProfile() {
     try {
         const resp = await fetch('/api/user/profile', {
             method: 'POST',
-            headers: Object.assign({'Content-Type': 'application/json'}, getAuthHeaders()),
+            headers: Object.assign({ 'Content-Type': 'application/json' }, getAuthHeaders()),
             body: JSON.stringify({ fname: fname || null, lname: lname || null })
         });
         const data = await resp.json();
@@ -986,10 +1021,10 @@ async function saveUserProfile() {
             if (avatarEl) avatarEl.textContent = initials.toUpperCase() || 'AI';
             const defaultName = userProfile.email ? userProfile.email.split('@')[0] : 'User';
             if (nameEl) nameEl.textContent = (userProfile.fname || userProfile.lname) ? `${userProfile.fname || ''} ${userProfile.lname || ''}`.trim() : defaultName;
-            
+
             // 🎯 ADD THIS LINE - Update prompt count display after saving profile
             await updateUserInfo();
-            
+
             // Close modal
             toggleSettings();
             alert('Profile saved');
@@ -1020,10 +1055,10 @@ document.getElementById('settingsModal').addEventListener('click', (e) => {
 document.addEventListener('click', (e) => {
     const sidebar = document.getElementById('sidebar');
     const menuBtn = document.querySelector('.menu-btn');
-    
-    if (window.innerWidth <= 768 && 
-        sidebar.classList.contains('active') && 
-        !sidebar.contains(e.target) && 
+
+    if (window.innerWidth <= 768 &&
+        sidebar.classList.contains('active') &&
+        !sidebar.contains(e.target) &&
         !menuBtn.contains(e.target)) {
         sidebar.classList.remove('active');
     }

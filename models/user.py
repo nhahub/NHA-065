@@ -1,10 +1,6 @@
-from flask_sqlalchemy import SQLAlchemy
+from .db import db
+
 from datetime import datetime
-
-# SQLAlchemy DB instance
-db = SQLAlchemy()
-
-
 class User(db.Model):
     __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
@@ -14,7 +10,6 @@ class User(db.Model):
     lname = db.Column(db.String(64), nullable=True)
     is_pro = db.Column(db.Boolean, default=False)
     prompt_count = db.Column(db.Integer, default=0)
-    # timestamp when prompt_count was last reset to 0
     last_prompt_reset = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -36,12 +31,3 @@ class User(db.Model):
         if first or last:
             return ((first[:1] or '') + (last[:1] or '')).upper()
         return 'AI'
-
-
-class ChatHistory(db.Model):
-    __tablename__ = 'chat_history'
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    prompt = db.Column(db.Text, nullable=False)
-    image_path = db.Column(db.String(255))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
