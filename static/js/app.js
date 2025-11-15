@@ -15,6 +15,7 @@ let currentSettings = {
 let conversationHistory = [];
 let mistralConversationHistory = [];
 let availableLoras = [];
+let useWebSearch = false; // Web search toggle state
 
 // Return Authorization headers if an auth token is available
 function getAuthHeaders() {
@@ -162,7 +163,8 @@ async function sendMessage() {
             },
             body: JSON.stringify({
                 message: prompt,
-                conversation_history: mistralConversationHistory
+                conversation_history: mistralConversationHistory,
+                use_web_search: useWebSearch
             })
         });
 
@@ -281,6 +283,26 @@ async function sendMessage() {
                 finalizeStreamingMessage();
                 mistralConversationHistory.push({ role: 'assistant', content: chatData.response });
                 await updateUserInfo();
+            }
+            else if (chatData.awaiting_photo_confirmation && chatData.photo_result) {
+                // Photo search result - show preview with confirmation
+                const responseMsg = addStreamingMessage('assistant', '');
+                await streamText(chatData.response, responseMsg);
+                finalizeStreamingMessage();
+                
+                // Add photo grid
+                if (chatData.photo_result.results && chatData.photo_result.results.length > 0) {
+                    addPhotoGrid(chatData.photo_result.results);
+                }
+                
+                mistralConversationHistory.push({ role: 'assistant', content: chatData.response });
+            }
+            else if (chatData.photo_confirmed) {
+                // Photo confirmed and saved
+                const responseMsg = addStreamingMessage('assistant', '');
+                await streamText(chatData.response, responseMsg);
+                finalizeStreamingMessage();
+                mistralConversationHistory.push({ role: 'assistant', content: chatData.response });
             }
             else {
                 const responseMsg = addStreamingMessage('assistant', '');
@@ -1097,3 +1119,68 @@ document.addEventListener('DOMContentLoaded', () => {
     // wait a tick for the token to be stored
     setTimeout(loadUserProfile, 800);
 });
+
+// Toggle web search button
+function toggleWebSearchButton() {
+    useWebSearch = !useWebSearch;
+    const btn = document.getElementById('webSearchToggleBtn');
+    if (btn) {
+        if (useWebSearch) {
+            btn.classList.add('active');
+            btn.title = 'Web search enabled - Click to disable';
+        } else {
+            btn.classList.remove('active');
+            btn.title = 'Enable web search for reference logos';
+        }
+    }
+}
+
+// Add photo grid to display search results
+function addPhotoGrid(photos) {
+    const messages = document.getElementById('messages');
+    const gridDiv = document.createElement('div');
+    gridDiv.className = 'message assistant';
+    
+    let gridHTML = `
+        <div class="message-avatar"><img src="/photos/zypher.jpeg" alt="AI" class="avatar-logo"></div>
+        <div class="message-content">
+            <div class="photo-grid">
+    `;
+    
+    photos.forEach((photo, index) => {
+        const hostname = photo.hostname || 'web';
+        const title = photo.title || 'Logo';
+        const imageUrl = photo.thumbnail_url || photo.image_url;
+        
+        gridHTML += `
+            <div class="photo-grid-item" onclick="selectPhoto(${index})">
+                <div class="photo-grid-image">
+                    <img src="${imageUrl}" alt="${escapeHtml(title)}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'image-error\\'>Image unavailable</div>'">
+                </div>
+                <div class="photo-grid-info">
+                    <div class="photo-title">${escapeHtml(title)}</div>
+                    <div class="photo-source" style="font-size: 12px; color: var(--text-secondary);">${escapeHtml(hostname)}</div>
+                </div>
+            </div>
+        `;
+    });
+    
+    gridHTML += `
+            </div>
+            <div style="margin-top: 16px; display: flex; gap: 12px;">
+                <button class="btn-secondary" onclick="document.getElementById('promptInput').value='no'; sendMessage();" style="padding: 10px 20px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); cursor: pointer;">❌ Search Different</button>
+            </div>
+        </div>
+    `;
+    
+    gridDiv.innerHTML = gridHTML;
+    messages.appendChild(gridDiv);
+    scrollToBottom();
+}
+
+// Select a photo from the grid
+function selectPhoto(index) {
+    const input = document.getElementById('promptInput');
+    input.value = `use image ${index}`;
+    sendMessage();
+}

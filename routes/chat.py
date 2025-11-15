@@ -158,7 +158,7 @@ def chat_with_ai():
                     # Fall through to normal Mistral response
                     pass
 
-    response_text, is_image, image_prompt = mistral_chat.chat(user_message, data.get('conversation_history', []), user_id=uid, use_web_search=use_web_search)
+    response_text, is_image, image_prompt, logo_data = mistral_chat.chat(user_message, data.get('conversation_history', []), user_id=uid, use_web_search=use_web_search)
 
     if is_image and image_prompt:
         if not user.is_pro and user.prompt_count >= 5:
