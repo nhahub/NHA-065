@@ -16,6 +16,32 @@ let conversationHistory = [];
 let mistralConversationHistory = [];
 let availableLoras = [];
 let useWebSearch = false; // Web search toggle state
+let currentConversationId = null;
+
+// Generate new conversation ID
+function generateConversationId() {
+    return 'conv_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+// New chat function
+function newChat() {
+    conversationHistory = [];
+    mistralConversationHistory = [];
+    currentConversationId = generateConversationId(); // Generate new conversation ID
+    document.getElementById('messages').innerHTML = '';
+    document.getElementById('welcomeScreen').style.display = 'flex';
+    document.getElementById('promptInput').value = '';
+    focusInput();
+}
+// Initialize conversation ID on page load
+document.addEventListener('DOMContentLoaded', () => {
+    currentConversationId = generateConversationId();
+    loadHistory();
+    loadUserProfile();
+    loadAvailableLoras();
+    updateUserInfo();
+    focusInput();
+});
 
 // Return Authorization headers if an auth token is available
 function getAuthHeaders() {
@@ -128,8 +154,6 @@ function newChat() {
 }
 
 // Send message
-// static/js/app.js - Update the sendMessage function around line 150-200
-
 async function sendMessage() {
     const input = document.getElementById('promptInput');
     const prompt = input.value.trim();
@@ -164,10 +188,10 @@ async function sendMessage() {
             body: JSON.stringify({
                 message: prompt,
                 conversation_history: mistralConversationHistory,
-                use_web_search: useWebSearch
+                use_web_search: useWebSearch,
+                conversation_id: currentConversationId
             })
         });
-
         const chatData = await chatResponse.json();
 
         removeTypingIndicator();
@@ -742,37 +766,115 @@ async function loadHistory() {
     }
 }
 
-// Update history list in sidebar
+// static/js/app.js
+
+// Update history list to show conversations
 function updateHistoryList() {
     const historyList = document.getElementById('historyList');
 
-    if (conversationHistory.length === 0) {
+    if (!conversationHistory || conversationHistory.length === 0) {
         historyList.innerHTML = '<p style="color: var(--text-secondary); font-size: 13px; padding: 12px;">No history yet</p>';
         return;
     }
 
     historyList.innerHTML = conversationHistory
-        .map((item) => {
-            // Use user's original message first
-            const userText = item.user_message || item.prompt || '';
-            const fallback = item.ai_response || item.image_prompt || 'Untitled';
-            const displayText = userText || fallback;
-            const preview = displayText.length > 50 ? displayText.substring(0, 50) + '...' : displayText;
-            const timestamp = item.timestamp ? new Date(item.timestamp).toLocaleDateString() : '';
+        .map((conv) => {
+            const preview = conv.preview || 'New Chat';
+            const timestamp = conv.last_updated ? new Date(conv.last_updated).toLocaleDateString() : '';
+            const messageCount = conv.message_count || 1;
 
             return `
                 <div class="history-item-wrapper">
-                    <button class="history-item" onclick="viewHistoryItem(${item.id})" title="${escapeHtml(displayText)}">
+                    <button class="history-item" onclick="loadConversation('${conv.conversation_id}')" title="${escapeHtml(preview)}">
                         <span class="history-item-text">${escapeHtml(preview)}</span>
-                        ${timestamp ? `<span class="history-item-date">${timestamp}</span>` : ''}
+                        <span class="history-item-date">${timestamp} • ${messageCount} messages</span>
                     </button>
-                    <button class="history-item-delete" onclick="deleteHistoryItem(event, ${item.id})" title="Delete">
+                    <button class="history-item-delete" onclick="deleteConversation(event, '${conv.conversation_id}')" title="Delete">
                         Delete
                     </button>
                 </div>
             `;
         })
         .join('');
+}
+
+// Load entire conversation
+async function loadConversation(conversationId) {
+    try {
+        const response = await fetch(`/api/history/${conversationId}`, { 
+            headers: getAuthHeaders() 
+        });
+        const data = await response.json();
+
+        if (data.success && data.messages) {
+            // Clear current view
+            document.getElementById('messages').innerHTML = '';
+            document.getElementById('welcomeScreen').style.display = 'none';
+            
+            // Set current conversation ID
+            currentConversationId = conversationId;
+            
+            // Display all messages in order
+            for (const msg of data.messages) {
+                // Show user message
+                addMessage('user', msg.user_message);
+                
+                // Show AI response
+                if (msg.ai_response && msg.message_type !== 'image') {
+                    addMessage('assistant', msg.ai_response);
+                }
+                
+                // Show image if exists
+                if (msg.image_path && msg.message_type === 'image') {
+                    const imageName = msg.image_path.split('/').pop() || msg.image_path.split('\\').pop();
+                    const imageUrl = `/outputs/${imageName}`;
+                    const fullPrompt = msg.image_prompt || '[No refined prompt available]';
+                    
+                    const messages = document.getElementById('messages');
+                    const messageDiv = document.createElement('div');
+                    messageDiv.className = 'message assistant';
+                    
+                    messageDiv.innerHTML = `
+                        <div class="message-avatar"><img src="/photos/zypher.jpeg" alt="AI" class="avatar-logo"></div>
+                        <div class="message-content">
+                            <div class="message-text markdown-content">
+                                <strong>Generated Image</strong><br>
+                                <details style="margin-top: 8px;">
+                                    <summary style="cursor: pointer; color: var(--text-secondary); font-size: 0.9em;">
+                                        View full generation prompt
+                                    </summary>
+                                    <div style="margin-top: 8px; padding: 12px; background: var(--bg-secondary); border-radius: 6px; font-size: 0.85em; line-height: 1.6; white-space: pre-wrap;">
+                                        ${escapeHtml(fullPrompt)}
+                                    </div>
+                                </details>
+                            </div>
+                            <div class="message-image">
+                                <img src="${imageUrl}" alt="Generated logo" 
+                                    onerror="this.parentElement.innerHTML='<p style=\\'color: var(--text-secondary); padding: 20px; text-align: center;\\'>Image not found</p>'">
+                            </div>
+                            <div class="message-metadata">
+                                <div class="metadata-row">
+                                    <span class="metadata-label">Generated:</span>
+                                    <span>${msg.timestamp ? new Date(msg.timestamp).toLocaleString() : 'Unknown'}</span>
+                                </div>
+                                <button class="download-btn" onclick="downloadImage('${imageUrl}', '${imageName}')">
+                                    Download
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    messages.appendChild(messageDiv);
+                }
+            }
+            
+            scrollToBottom();
+        } else {
+            alert('Could not load conversation');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to load conversation');
+    }
 }
 
 // View history item 

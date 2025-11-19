@@ -24,6 +24,7 @@ def chat_with_ai():
     data = request.json
     user_message = data.get('message', '').strip()
     use_web_search = data.get('use_web_search', False)
+    conversation_id = data.get('conversation_id')
     
     if not user_message:
         return jsonify({'success': False, 'error': 'Message required'}), 400
@@ -169,11 +170,15 @@ def chat_with_ai():
             return jsonify({'success': True, 'response': limit_msg + " [Upgrade](/upgrade)", 'needs_upgrade': True})
 
         friendly = mistral_chat.generate_acknowledgment(user_message)
-        entry = ChatHistory(user_id=user.id, user_message=user_message, ai_response=friendly,
-                            image_prompt=image_prompt, message_type='image')
+        entry = ChatHistory(
+            user_id=user.id, 
+            user_message=user_message, 
+            ai_response=response_text, 
+            message_type='text',
+            conversation_id=conversation_id  # Save conversation ID
+        )
         db.session.add(entry)
         db.session.commit()
-
         return jsonify({
             'success': True, 'response': friendly, 'is_image_request': True,
             'image_prompt': image_prompt, 'needs_generation': True,
