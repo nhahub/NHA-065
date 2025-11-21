@@ -102,10 +102,11 @@ def migrate_chat_history_schema():
                     print(f"   ✗ Data migration from 'prompt' failed: {e}")
                     conn.rollback()
             
-            # 2. Generate conversation_id for existing records
+            # 2. Generate conversation_id ONLY for OLD records that don't have one
+            # New records will get conversation_id from frontend
             if 'conversation_id' in cols:
                 try:
-                    # Check if there are records without conversation_id
+                    # Check if there are OLD records without conversation_id
                     result = conn.execute(text("""
                         SELECT COUNT(*) as count 
                         FROM chat_history 
@@ -114,12 +115,10 @@ def migrate_chat_history_schema():
                     count = result.fetchone()[0]
                     
                     if count > 0:
-                        print(f"   🔄 Generating conversation IDs for {count} existing records...")
+                        print(f"   🔄 Generating conversation IDs for {count} OLD records...")
+                        print(f"   ⚠️  Note: Old records will use UUID format, new records use frontend format")
                         
-                        # Strategy: Group messages by user and day, assign same conversation_id
-                        # This creates logical conversation groups from existing data
-                        
-                        # For SQLite, we'll do this in Python since SQLite has limited window functions
+                        # Strategy: Group OLD messages by user and day, assign same conversation_id
                         result = conn.execute(text("""
                             SELECT id, user_id, created_at 
                             FROM chat_history 
@@ -158,7 +157,10 @@ def migrate_chat_history_schema():
                                 if user_id != current_user or record_date != current_date:
                                     current_user = user_id
                                     current_date = record_date
-                                    current_conv_id = str(uuid.uuid4())
+                                    # Use same format as frontend for consistency
+                                    timestamp = int(created_dt.timestamp() * 1000)
+                                    random_suffix = str(uuid.uuid4())[:8]
+                                    current_conv_id = f"conv_{timestamp}_{random_suffix}"
                                 
                                 updates.append({
                                     'record_id': record_id,
@@ -241,7 +243,8 @@ def migrate_chat_history_schema():
                 print(f"   ⚠️  Could not get statistics: {e}")
             
             conn.close()
-            print("\n✅ Migration completed successfully!\n")
+            print("\n✅ Migration completed successfully!")
+            print("   💡 New messages will use frontend-generated conversation IDs\n")
             
     except Exception as e:
         print(f"\n❌ Migration error: {e}\n")

@@ -24,7 +24,7 @@ def chat_with_ai():
     data = request.json
     user_message = data.get('message', '').strip()
     use_web_search = data.get('use_web_search', False)
-    conversation_id = data.get('conversation_id')
+    conversation_id = data.get('conversation_id')  # ✅ Get conversation_id from request
     
     if not user_message:
         return jsonify({'success': False, 'error': 'Message required'}), 400
@@ -164,7 +164,13 @@ def chat_with_ai():
     if is_image and image_prompt:
         if not user.is_pro and user.prompt_count >= 5:
             limit_msg = "Free limit reached (5/day). Upgrade to Pro!"
-            entry = ChatHistory(user_id=user.id, user_message=user_message, ai_response=limit_msg, message_type='text')
+            entry = ChatHistory(
+                user_id=user.id, 
+                user_message=user_message, 
+                ai_response=limit_msg, 
+                message_type='text',
+                conversation_id=conversation_id  # ✅ Add conversation_id
+            )
             db.session.add(entry)
             db.session.commit()
             return jsonify({'success': True, 'response': limit_msg + " [Upgrade](/upgrade)", 'needs_upgrade': True})
@@ -175,7 +181,7 @@ def chat_with_ai():
             user_message=user_message, 
             ai_response=response_text, 
             message_type='text',
-            conversation_id=conversation_id  # Save conversation ID
+            conversation_id=conversation_id  # ✅ Add conversation_id
         )
         db.session.add(entry)
         db.session.commit()
@@ -185,7 +191,14 @@ def chat_with_ai():
             'chat_entry_id': entry.id, 'remaining_prompts': None if user.is_pro else (5 - user.prompt_count)
         })
 
-    entry = ChatHistory(user_id=user.id, user_message=user_message, ai_response=response_text, message_type='text')
+    # ✅ Add conversation_id to regular chat entries
+    entry = ChatHistory(
+        user_id=user.id, 
+        user_message=user_message, 
+        ai_response=response_text, 
+        message_type='text',
+        conversation_id=conversation_id  # ✅ Add conversation_id
+    )
     db.session.add(entry)
     db.session.commit()
 

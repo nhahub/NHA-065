@@ -26,9 +26,21 @@ def generate_from_chat():
     data = request.json
     image_prompt = data.get('image_prompt', '').strip()
     chat_entry_id = data.get('chat_entry_id')
+    conversation_id = data.get('conversation_id')  # ✅ Get conversation_id from request
 
     if not image_prompt:
         return jsonify({'success': False, 'error': 'Prompt required'}), 400
+    
+    # ✅ CRITICAL: Ensure conversation_id is never None
+    if not conversation_id:
+        # Generate a fallback conversation_id if somehow missing
+        import time
+        import random
+        import string
+        timestamp = int(time.time() * 1000)
+        random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=9))
+        conversation_id = f"conv_{timestamp}_{random_suffix}"
+        print(f"⚠️  Warning: No conversation_id provided, generated fallback: {conversation_id}")
 
     uid = request.firebase_user['uid']
     user = User.query.filter_by(firebase_uid=uid).with_for_update().first()
@@ -85,7 +97,8 @@ def generate_from_chat():
                     ai_response="Image",
                     image_path=path,
                     image_prompt=image_prompt,
-                    message_type='image'
+                    message_type='image',
+                    conversation_id=conversation_id  # ✅ Add conversation_id
                 )
                 db.session.add(entry)
         else:
@@ -95,7 +108,8 @@ def generate_from_chat():
                 ai_response="Image",
                 image_path=path,
                 image_prompt=image_prompt,
-                message_type='image'
+                message_type='image',
+                conversation_id=conversation_id  # ✅ Add conversation_id
             )
             db.session.add(entry)
 
