@@ -242,3 +242,27 @@ def export_history():
         'total_items': len(history),
         'history': history
     })
+
+@history_bp.route('/api/history/conversation/<conversation_id>', methods=['DELETE'])
+@verify_firebase_token
+def delete_conversation(conversation_id):
+    """Delete an entire conversation and all its messages."""
+    uid = get_request_uid()
+    
+    user = User.query.filter_by(firebase_uid=uid).first()
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    
+    # Delete all messages in this conversation
+    deleted_count = ChatHistory.query.filter_by(
+        user_id=user.id,
+        conversation_id=conversation_id
+    ).delete()
+    
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'message': f'Deleted conversation with {deleted_count} messages',
+        'deleted_count': deleted_count
+    })
