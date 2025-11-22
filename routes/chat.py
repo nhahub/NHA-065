@@ -161,6 +161,17 @@ def chat_with_ai():
 
     response_text, is_image, image_prompt, logo_data = mistral_chat.chat(user_message, data.get('conversation_history', []), user_id=uid, use_web_search=use_web_search)
 
+    # Check if this is a web search result from Mistral
+    if logo_data and isinstance(logo_data, dict) and logo_data.get('_web_search_result'):
+        photo_result = logo_data.get('photo_result')
+        return jsonify({
+            'success': True,
+            'response': response_text,
+            'is_image_request': False,
+            'awaiting_photo_confirmation': True,
+            'photo_result': photo_result
+        })
+
     if is_image and image_prompt:
         if not user.is_pro and user.prompt_count >= 5:
             limit_msg = "Free limit reached (5/day). Upgrade to Pro!"

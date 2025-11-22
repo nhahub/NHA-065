@@ -65,31 +65,29 @@ class MistralChatManager:
         Returns:
             bool: True if requesting photo search
         """
-        # Keywords that indicate photo search intent
-        search_keywords = [
-            r'\b(search|find|look|get|fetch|show|display)\b',
-            r'\b(photo|image|picture|logo|pic)\b',
-            r'\b(of|for)\b'
-        ]
-        
         text_lower = text.lower()
         
-        # Check if message contains search action, target, and context
-        has_search_action = bool(re.search(search_keywords[0], text_lower))
-        has_target = bool(re.search(search_keywords[1], text_lower))
-        has_context = bool(re.search(search_keywords[2], text_lower))
-        
-        # Also check for specific patterns like "search for a photo of X"
+        # Enhanced patterns that catch more natural language variations
         specific_patterns = [
-            r'\b(search|find|get|fetch|show).*?(photo|image|logo|picture).*?(of|for)\b',
-            r'\b(photo|image|logo|picture).*?(of|for)\b.*\w+',
+            # Direct search commands
+            r'\b(search|find|get|fetch|show|display|look up|lookup)\s+(?:for\s+)?(?:a\s+)?(?:an\s+)?(?:the\s+)?(?:photo|image|logo|picture|pic)\s+(?:of\s+|for\s+)',
+            # "show me X logo" patterns
+            r'\b(show|find|get|fetch)\s+(?:me\s+)?(?:the\s+)?\w+\s+(?:logo|image|photo)',
+            # "X logo" at start or after search words
+            r'\b(search|find|get|lookup|look up)\s+\w+\s+logo',
+            # Photo/image/logo + of/for pattern
+            r'\b(?:photo|image|logo|picture)\s+(?:of|for)\s+\w+',
+            # Brand name + logo (e.g., "Nike logo")
+            r'\b[A-Z]\w+\s+logo\b',
+            # "the X logo"
+            r'\bthe\s+\w+\s+logo\b',
         ]
         
         for pattern in specific_patterns:
-            if re.search(pattern, text_lower):
+            if re.search(pattern, text_lower, re.IGNORECASE):
                 return True
         
-        return has_search_action and has_target and has_context
+        return False
     
     def extract_photo_search_query(self, text: str) -> Optional[str]:
         """
@@ -103,22 +101,34 @@ class MistralChatManager:
         """
         # Patterns to extract the subject - more flexible to handle various phrasings
         patterns = [
-            # "search for the BMW logo" -> captures "the BMW logo"
-            r'(?:search|find|get|fetch|show|display).*?(?:for|a|an|the)\s+(.*?(?:logo|image|photo|picture))',
+            # "search for the BMW logo" -> captures "BMW logo"
+            r'(?:search|find|get|fetch|show|display|look\s+up|lookup)\s+(?:for\s+)?(?:a\s+)?(?:an\s+)?(?:the\s+)?([\w\s]+\s+logo)',
+            # "show me Nike logo" -> captures "Nike logo"
+            r'(?:show|find|get)\s+(?:me\s+)?(?:the\s+)?([\w\s]+\s+logo)',
             # "search for a photo of BMW" -> captures "BMW"
-            r'(?:search|find|get|fetch|show|display).*?(?:photo|image|logo|picture).*?(?:of|for)\s+([^.!?]+)',
+            r'(?:search|find|get|fetch|show|display).*?(?:photo|image|logo|picture).*?(?:of|for)\s+([^.!?,]+)',
             # "photo of BMW" -> captures "BMW"
-            r'(?:photo|image|logo|picture).*?(?:of|for)\s+([^.!?]+)',
-            # Fallback: just take everything after search action
-            r'(?:search|find|get|fetch|show|display)\s+(?:for\s+)?(?:a\s+)?(?:an\s+)?(?:the\s+)?(.+)',
+            r'(?:photo|image|logo|picture)\s+(?:of|for)\s+([^.!?,]+)',
+            # "the Nike logo" -> captures "Nike logo"
+            r'the\s+([\w\s]+\s+logo)',
+            # "Brand name + logo" pattern (e.g., "Nike logo")
+            r'\b([A-Z][\w\s]*\s+logo)\b',
+            # Fallback: capture brand name before "logo"
+            r'([\w\s]+)\s+logo',
         ]
         
         for pattern in patterns:
-            match = re.search(pattern, text.lower())
+            match = re.search(pattern, text, re.IGNORECASE)
             if match:
                 query = match.group(1).strip()
-                # Clean up common trailing words
-                query = re.sub(r'\s+(please|thanks|thank you)$', '', query)
+                # Clean up common trailing words and punctuation
+                query = re.sub(r'\s+(please|thanks|thank you|now|today)$', '', query, flags=re.IGNORECASE)
+                query = re.sub(r'[.!?,;]+$', '', query)  # Remove trailing punctuation
+                
+                # If query doesn't contain "logo", add it
+                if query and 'logo' not in query.lower():
+                    query = f"{query} logo"
+                
                 if query and len(query) > 2:  # Ensure we got something meaningful
                     return query
         
@@ -146,6 +156,33 @@ class MistralChatManager:
                 try:
                     data = json.loads(json_match.group())
                     return data.get('prompt')
+                except:
+                    pass
+        
+        return None
+    
+    def extract_web_search_query(self, response_text: str) -> Optional[str]:
+        """
+        Extract web search query from Mistral response if it contains JSON search action
+        
+        Args:
+            response_text (str): Mistral response
+            
+        Returns:
+            Optional[str]: Extracted search query or None
+        """
+        try:
+            # Try to parse as JSON
+            data = json.loads(response_text)
+            if isinstance(data, dict) and data.get('action') == 'search_web':
+                return data.get('query')
+        except json.JSONDecodeError:
+            # Try to extract JSON from text
+            json_match = re.search(r'\{[^}]*"action"\s*:\s*"search_web"[^}]*\}', response_text)
+            if json_match:
+                try:
+                    data = json.loads(json_match.group())
+                    return data.get('query')
                 except:
                     pass
         
@@ -207,6 +244,18 @@ class MistralChatManager:
                 {"role": "system", "content": self.system_prompt}
             ]
             
+            # Add web search status context to system message if needed
+            if use_web_search:
+                messages.append({
+                    "role": "system", 
+                    "content": "Note: Web search is currently ENABLED. You can use the search_web action to find existing logos/images."
+                })
+            else:
+                messages.append({
+                    "role": "system",
+                    "content": "Note: Web search is currently DISABLED. If user requests to search for existing logos, inform them to enable web search."
+                })
+            
             # Add conversation history if provided
             if conversation_history:
                 messages.extend(conversation_history[-10:])  # Keep last 10 messages for context
@@ -241,6 +290,28 @@ class MistralChatManager:
             
             result = response.json()
             assistant_message = result['choices'][0]['message']['content']
+            
+            # Check if Mistral returned a web search action (when web search is enabled)
+            if use_web_search:
+                web_search_query = self.extract_web_search_query(assistant_message)
+                if web_search_query:
+                    # Mistral wants to search the web
+                    try:
+                        photo_result = self.logo_agent.search_for_photo(web_search_query)
+                        
+                        if photo_result.get('success'):
+                            preview_text = self.logo_agent.format_photo_preview(photo_result)
+                            # Store pending request for confirmation
+                            if user_id:
+                                self.pending_photo_requests[user_id] = photo_result
+                            
+                            # Return special tuple indicating this is a photo search result
+                            # Format: (response, is_image_request, image_prompt, photo_data)
+                            # We use a special marker in response to indicate this is a web search
+                            return (preview_text, False, None, {'_web_search_result': True, 'photo_result': photo_result})
+                    except Exception as e:
+                        print(f"Error performing web search: {e}")
+                        # Continue with normal response
             
             # Check if this is a logo generation request
             if self.is_image_generation_request(user_message):
