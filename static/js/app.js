@@ -1374,16 +1374,28 @@ function addPhotoGrid(photos) {
     photos.forEach((photo, index) => {
         const hostname = photo.hostname || 'web';
         const title = photo.title || 'Logo';
-        const imageUrl = photo.thumbnail_url || photo.image_url;
+        // Use primary image URL with fallbacks
+        const imageUrl = photo.image_url || photo.thumbnail_url;
+        const fallbackUrl = photo.fallback_url || photo.full_image_url || imageUrl;
+        
+        // Create a unique ID for this image
+        const imageId = `photo-img-${index}-${Date.now()}`;
         
         gridHTML += `
             <div class="photo-grid-item" onclick="selectPhoto(${index})">
                 <div class="photo-grid-image">
-                    <img src="${imageUrl}" alt="${escapeHtml(title)}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'image-error\\'>Image unavailable</div>'">
+                    <img id="${imageId}" 
+                         src="${escapeHtml(imageUrl)}" 
+                         alt="${escapeHtml(title)}" 
+                         loading="lazy" 
+                         data-fallback="${escapeHtml(fallbackUrl)}"
+                         data-index="${index}"
+                         onerror="handleImageError(this)">
+                    <div class="image-loader" style="display: none;">Loading...</div>
                 </div>
                 <div class="photo-grid-info">
                     <div class="photo-title">${escapeHtml(title)}</div>
-                    <div class="photo-source" style="font-size: 12px; color: var(--text-secondary);">${escapeHtml(hostname)}</div>
+                    <div class="photo-source">${escapeHtml(hostname)}</div>
                 </div>
             </div>
         `;
@@ -1400,6 +1412,36 @@ function addPhotoGrid(photos) {
     gridDiv.innerHTML = gridHTML;
     messages.appendChild(gridDiv);
     scrollToBottom();
+}
+
+// Handle image loading errors with fallback
+function handleImageError(img) {
+    // Check if we've already tried the fallback
+    if (img.dataset.tried) {
+        // Show error state
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'image-error';
+        errorDiv.innerHTML = '📷<br><span style="font-size: 12px;">Image unavailable</span>';
+        img.parentElement.replaceChild(errorDiv, img);
+        return;
+    }
+    
+    // Try fallback URL
+    const fallbackUrl = img.dataset.fallback;
+    if (fallbackUrl && fallbackUrl !== img.src && fallbackUrl !== 'null' && fallbackUrl !== '') {
+        console.log(`Trying fallback URL for image ${img.dataset.index}`);
+        img.dataset.tried = 'true';
+        // Add a small delay to avoid rapid fire requests
+        setTimeout(() => {
+            img.src = fallbackUrl;
+        }, 500);
+    } else {
+        // No valid fallback available, show error
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'image-error';
+        errorDiv.innerHTML = '📷<br><span style="font-size: 12px;">Image unavailable</span>';
+        img.parentElement.replaceChild(errorDiv, img);
+    }
 }
 
 // Select a photo from the grid

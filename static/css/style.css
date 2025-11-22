@@ -1976,19 +1976,21 @@ input[type="range"] {
 /* Photo Grid Layout */
 .photo-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
     margin: 20px 0;
 }
 
 .photo-grid-item {
     background: var(--bg-input);
     border: 2px solid transparent;
-    border-radius: 10px;
+    border-radius: 12px;
     overflow: hidden;
     cursor: pointer;
     transition: all 0.3s ease;
     position: relative;
+    display: flex;
+    flex-direction: column;
 }
 
 .photo-grid-item:hover {
@@ -2005,17 +2007,20 @@ input[type="range"] {
 .photo-grid-image {
     position: relative;
     width: 100%;
-    height: 180px;
+    height: 200px;
     background: var(--bg-secondary);
     display: flex;
     align-items: center;
     justify-content: center;
+    overflow: hidden;
 }
 
 .photo-grid-image img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;  /* Changed from cover to contain for logos */
+    object-position: center;
+    padding: 10px;  /* Add padding so logos don't touch edges */
     display: block;
 }
 
@@ -2024,6 +2029,44 @@ input[type="range"] {
     font-size: 14px;
     text-align: center;
     padding: 20px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 150px;
+}
+
+.image-loader {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 150px;
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+/* Image loading skeleton */
+.photo-grid-image img[loading="lazy"] {
+    background: linear-gradient(
+        90deg,
+        var(--bg-secondary) 25%,
+        var(--bg-input) 50%,
+        var(--bg-secondary) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: -200% 0;
+    }
+    100% {
+        background-position: 200% 0;
+    }
 }
 
 .selection-overlay {
@@ -2082,25 +2125,54 @@ input[type="range"] {
 }
 
 .photo-grid-info {
-    padding: 12px;
+    padding: 14px 16px;
+    background: var(--bg-input);
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
 
 .photo-title {
-    font-size: 14px;
-    font-weight: 500;
+    font-size: 13px;
+    font-weight: 600;
     color: var(--text-primary);
-    margin-bottom: 4px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    line-height: 1.4;
 }
 
 .photo-source {
-    font-size: 12px;
+    font-size: 11px;
     color: var(--text-secondary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    opacity: 0.8;
+}
+
+/* Responsive photo grid for mobile */
+@media (max-width: 768px) {
+    .photo-grid {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
+    
+    .photo-grid-image {
+        height: 180px;
+    }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+    .photo-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* Add visual feedback for clickable items */
+.photo-grid-item:active {
+    transform: scale(0.98);
 }
 
 .keyboard-hint {

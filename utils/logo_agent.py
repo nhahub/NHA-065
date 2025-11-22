@@ -435,7 +435,7 @@ class LogoReferenceAgent:
     
     def search_for_photo(self, query: str, max_results: int = 3) -> Dict:
         """
-        Search for multiple photos/logos using Brave Web Search API with image results.
+        Search for multiple photos/logos using Brave Image Search API.
         
         Args:
             query (str): Search query for the photo/logo
@@ -456,17 +456,19 @@ class LogoReferenceAgent:
                 'X-Subscription-Token': self.brave_api_key
             }
             
-            # Use web search endpoint which returns mixed results including images
+            # Use web search endpoint with image focus (image search API has stricter limits)
+            # Brave Image Search API may not support all parameters, so we use web search
             params = {
-                'q': f"{query} logo image",  # Add 'logo image' to get better image results
-                'count': max_results * 3  # Get more results to filter better ones
+                'q': f"{query} logo",  # Add 'logo' to get better results
+                'count': min(20, max_results * 4),  # Request more but respect API limits
+                'search_lang': 'en'
             }
             
             response = requests.get(
-                self.brave_search_endpoint,  # Use web search endpoint
+                self.brave_search_endpoint,  # Use web search endpoint (more reliable)
                 headers=headers,
                 params=params,
-                timeout=10
+                timeout=15  # Increased timeout for more results
             )
             
             if response.status_code == 401:
@@ -475,52 +477,86 @@ class LogoReferenceAgent:
                     'error': 'Invalid Brave Search API key. Please check your BRAVE_SEARCH_API_KEY in .env'
                 }
             
+            if response.status_code == 422:
+                # Fallback with simpler parameters
+                params = {
+                    'q': query,
+                    'count': 10
+                }
+                response = requests.get(
+                    self.brave_search_endpoint,
+                    headers=headers,
+                    params=params,
+                    timeout=10
+                )
+            
             response.raise_for_status()
             data = response.json()
             
-            # Try to get image results from mixed results
+            # Get web results which include thumbnails
             web_results = data.get('web', {}).get('results', [])
             
-            # Collect multiple results with images
-            image_results = []
-            official_domains = ['com', 'org', 'net']  # Could be brand's official domain
-            
-            for result in web_results:
-                if len(image_results) >= max_results:
-                    break
-                    
-                # Extract image URL from thumbnail
-                image_url = ''
-                if result.get('thumbnail', {}).get('src'):
-                    image_url = result['thumbnail']['src']
-                
-                if not image_url:
-                    continue
-                
-                # Determine if it's an official/trusted source
-                hostname = result.get('meta_url', {}).get('hostname', '').lower()
-                is_official = any(domain in hostname for domain in official_domains)
-                is_trusted = hostname in ['wikipedia.org', 'wikimedia.org', 'commons.wikimedia.org']
-                
-                image_results.append({
-                    'image_url': image_url,
-                    'title': result.get('title', 'Untitled'),
-                    'source': result.get('url', ''),
-                    'description': result.get('description', ''),
-                    'hostname': hostname,
-                    'is_official': is_official,
-                    'is_trusted': is_trusted
-                })
-            
-            if not image_results:
+            if not web_results:
                 return {
                     'success': False,
                     'error': f'No images found for "{query}". Try a different search term.'
                 }
             
+            # Process and validate image results from web search
+            image_results = []
+            
+            for result in web_results:
+                if len(image_results) >= max_results:
+                    break
+                
+                # Get thumbnail from web result
+                thumbnail_data = result.get('thumbnail', {})
+                thumbnail_url = thumbnail_data.get('src', '')
+                
+                # Also check for page_fetched and meta_url for additional context
+                page_url = result.get('url', '')
+                
+                if not thumbnail_url:
+                    continue
+                
+                # Validate URL format
+                if not (thumbnail_url.startswith('http://') or thumbnail_url.startswith('https://')):
+                    continue
+                
+                # Get source information
+                hostname = result.get('meta_url', {}).get('hostname', 'web')
+                title = result.get('title', 'Logo Image')
+                description = result.get('description', '')
+                
+                # Check if from trusted sources
+                is_trusted = any(trusted in hostname.lower() for trusted in [
+                    'wikipedia.org', 'wikimedia.org', 'commons.wikimedia.org',
+                    'official', 'logo', 'brand'
+                ])
+                
+                image_results.append({
+                    'image_url': thumbnail_url,
+                    'thumbnail_url': thumbnail_url,
+                    'full_image_url': page_url,  # Use page URL as fallback
+                    'fallback_url': page_url,
+                    'title': title,
+                    'source': page_url,
+                    'description': description,
+                    'hostname': hostname,
+                    'is_trusted': is_trusted,
+                    'width': 0,  # Web search doesn't provide dimensions
+                    'height': 0
+                })
+            
+            if not image_results:
+                return {
+                    'success': False,
+                    'error': f'No valid images found for "{query}". Try a different search term.'
+                }
+            
             return {
                 'success': True,
-                'results': image_results,  # Now returns multiple results
+                'results': image_results,
                 'query': query,
                 'total_results': len(image_results)
             }
@@ -529,6 +565,16 @@ class LogoReferenceAgent:
             return {
                 'success': False,
                 'error': 'Search request timed out. Please try again.'
+            }
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 422:
+                return {
+                    'success': False,
+                    'error': f'Invalid search query. Please try different search terms.'
+                }
+            return {
+                'success': False,
+                'error': f'Search error: {e.response.status_code}'
             }
         except Exception as e:
             print(f"Error searching for photo: {e}")
