@@ -2196,3 +2196,19 @@ input[type="range"] {
 }
 
 .danger-btn:hover { background:#dc2626; }
+
+/* Highlight active conversation in history */
+.history-item.active {
+    background: var(--bg-tertiary);
+    border-left: 3px solid var(--accent-color);
+    padding-left: 9px; /* 12px - 3px border = 9px to maintain alignment */
+}
+
+.history-item.active .history-item-text {
+    color: var(--accent-color);
+    font-weight: 600;
+}
+
+.history-item.active:hover {
+    background: var(--bg-input);
+}

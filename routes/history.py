@@ -4,6 +4,7 @@ from models.db import db
 from models.user import User
 from models.chat_history import ChatHistory
 from utils.firebase_auth import verify_firebase_token, get_request_uid
+from sqlalchemy import func
 
 history_bp = Blueprint('history', __name__)
 
@@ -11,66 +12,83 @@ history_bp = Blueprint('history', __name__)
 @history_bp.route('/api/history', methods=['GET'])
 @verify_firebase_token
 def get_history():
-    """Get all chat history for the authenticated user (up to 50 most recent)."""
+    """Get all conversations for the authenticated user (grouped)."""
     uid = get_request_uid()
     user = User.query.filter_by(firebase_uid=uid).first()
     
     if not user:
-        return jsonify({'success': True, 'history': []})
+        return jsonify({'success': True, 'conversations': []})
 
-    entries = ChatHistory.query.filter_by(user_id=user.id).order_by(ChatHistory.created_at.desc()).limit(50).all()
-    history = []
+    # Group by conversation_id and get the latest message from each
+    conversations = db.session.query(
+        ChatHistory.conversation_id,
+        func.max(ChatHistory.created_at).label('last_updated'),
+        func.count(ChatHistory.id).label('message_count')
+    ).filter_by(
+        user_id=user.id
+    ).group_by(
+        ChatHistory.conversation_id
+    ).order_by(
+        func.max(ChatHistory.created_at).desc()
+    ).limit(50).all()
     
-    for e in entries:
-        item = {
-            'id': e.id,
-            'user_message': e.user_message or e.prompt or "Generated image",
-            'ai_response': e.ai_response,
-            'message_type': e.message_type or 'text',
-            'timestamp': e.created_at.isoformat() if e.created_at else None,
-            'preview': (e.user_message or e.ai_response or "")[:50] + "..."
-        }
-        if e.message_type == 'image':
-            item.update({
-                'image_prompt': e.image_prompt,
-                'image_path': e.image_path
-            })
-        history.append(item)
+    # Get first user message from each conversation for preview
+    conversation_list = []
+    for conv in conversations:
+        first_message = ChatHistory.query.filter_by(
+            user_id=user.id,
+            conversation_id=conv.conversation_id
+        ).order_by(ChatHistory.created_at.asc()).first()
+        
+        conversation_list.append({
+            'conversation_id': conv.conversation_id,
+            'preview': (first_message.user_message or "New Chat")[:50] + "...",
+            'message_count': conv.message_count,
+            'last_updated': conv.last_updated.isoformat(),
+            'timestamp': conv.last_updated.isoformat()
+        })
     
-    return jsonify({'success': True, 'history': history})
+    return jsonify({'success': True, 'conversations': conversation_list})
 
-
-@history_bp.route('/api/history/<int:history_id>', methods=['GET'])
+@history_bp.route('/api/history/<conversation_id>', methods=['GET'])
 @verify_firebase_token
-def get_history_item(history_id):
-    """Get a specific chat history item by ID."""
+def get_conversation(conversation_id):
+    """Get all messages in a specific conversation."""
     uid = get_request_uid()
-    
     user = User.query.filter_by(firebase_uid=uid).first()
+    
     if not user:
         return jsonify({'success': False, 'error': 'User not found'}), 404
     
-    history_item = ChatHistory.query.filter_by(id=history_id, user_id=user.id).first()
+    messages = ChatHistory.query.filter_by(
+        user_id=user.id,
+        conversation_id=conversation_id
+    ).order_by(ChatHistory.created_at.asc()).all()
     
-    if not history_item:
-        return jsonify({'success': False, 'error': 'History item not found'}), 404
+    if not messages:
+        return jsonify({'success': False, 'error': 'Conversation not found'}), 404
     
-    item = {
-        'id': history_item.id,
-        'user_message': history_item.user_message or history_item.prompt or "Generated image",
-        'ai_response': history_item.ai_response,
-        'message_type': history_item.message_type or 'text',
-        'timestamp': history_item.created_at.isoformat() if history_item.created_at else None,
-        'preview': (history_item.user_message or history_item.ai_response or "")[:50] + "..."
-    }
+    conversation_data = []
+    for msg in messages:
+        item = {
+            'id': msg.id,
+            'user_message': msg.user_message,
+            'ai_response': msg.ai_response,
+            'message_type': msg.message_type,
+            'timestamp': msg.created_at.isoformat()
+        }
+        if msg.message_type == 'image':
+            item.update({
+                'image_prompt': msg.image_prompt,
+                'image_path': msg.image_path
+            })
+        conversation_data.append(item)
     
-    if history_item.message_type == 'image':
-        item.update({
-            'image_prompt': history_item.image_prompt,
-            'image_path': history_item.image_path
-        })
-    
-    return jsonify({'success': True, 'history': item})
+    return jsonify({
+        'success': True,
+        'conversation_id': conversation_id,
+        'messages': conversation_data
+    })
 
 
 @history_bp.route('/api/history/<int:history_id>', methods=['DELETE'])
@@ -223,4 +241,28 @@ def export_history():
         'user_email': user.email,
         'total_items': len(history),
         'history': history
+    })
+
+@history_bp.route('/api/history/conversation/<conversation_id>', methods=['DELETE'])
+@verify_firebase_token
+def delete_conversation(conversation_id):
+    """Delete an entire conversation and all its messages."""
+    uid = get_request_uid()
+    
+    user = User.query.filter_by(firebase_uid=uid).first()
+    if not user:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    
+    # Delete all messages in this conversation
+    deleted_count = ChatHistory.query.filter_by(
+        user_id=user.id,
+        conversation_id=conversation_id
+    ).delete()
+    
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'message': f'Deleted conversation with {deleted_count} messages',
+        'deleted_count': deleted_count
     })

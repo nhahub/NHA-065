@@ -16,6 +16,33 @@ let conversationHistory = [];
 let mistralConversationHistory = [];
 let availableLoras = [];
 let useWebSearch = false; // Web search toggle state
+let currentConversationId = null;
+let activeConversationState = null;
+
+// Generate new conversation ID
+function generateConversationId() {
+    return 'conv_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+// New chat function
+function newChat() {
+    conversationHistory = [];
+    mistralConversationHistory = [];
+    currentConversationId = generateConversationId(); // Generate new conversation ID
+    document.getElementById('messages').innerHTML = '';
+    document.getElementById('welcomeScreen').style.display = 'flex';
+    document.getElementById('promptInput').value = '';
+    focusInput();
+}
+// Initialize conversation ID on page load
+document.addEventListener('DOMContentLoaded', () => {
+    currentConversationId = generateConversationId();
+    loadHistory();
+    loadUserProfile();
+    loadAvailableLoras();
+    updateUserInfo();
+    focusInput();
+});
 
 // Return Authorization headers if an auth token is available
 function getAuthHeaders() {
@@ -119,17 +146,73 @@ function usePrompt(button) {
 
 // New chat
 function newChat() {
+    // Save current conversation state before clearing
+    if (currentConversationId && document.getElementById('messages').innerHTML.trim() !== '') {
+        saveCurrentConversationState();
+    }
+    
+    // Generate new conversation ID
+    currentConversationId = generateConversationId();
+    
+    // Clear conversation state
     conversationHistory = [];
     mistralConversationHistory = [];
+    activeConversationState = {
+        conversationId: currentConversationId,
+        messages: [],
+        mistralHistory: []
+    };
+    
+    // Clear UI
     document.getElementById('messages').innerHTML = '';
     document.getElementById('welcomeScreen').style.display = 'flex';
     document.getElementById('promptInput').value = '';
+    
     focusInput();
 }
 
-// Send message
-// static/js/app.js - Update the sendMessage function around line 150-200
+// Save current conversation state to memory
+function saveCurrentConversationState() {
+    if (!currentConversationId) return;
+    
+    const messagesContainer = document.getElementById('messages');
+    const messages = Array.from(messagesContainer.children).map(msg => ({
+        html: msg.outerHTML,
+        className: msg.className
+    }));
+    
+    activeConversationState = {
+        conversationId: currentConversationId,
+        messages: messages,
+        mistralHistory: [...mistralConversationHistory]
+    };
+}
 
+// Restore conversation state from memory
+function restoreConversationState(conversationId) {
+    if (activeConversationState && activeConversationState.conversationId === conversationId) {
+        // Restore from memory
+        const messagesContainer = document.getElementById('messages');
+        messagesContainer.innerHTML = '';
+        
+        activeConversationState.messages.forEach(msg => {
+            const div = document.createElement('div');
+            div.className = msg.className;
+            div.innerHTML = msg.html.replace(/^<div[^>]*>/, '').replace(/<\/div>$/, '');
+            messagesContainer.appendChild(div);
+        });
+        
+        mistralConversationHistory = [...activeConversationState.mistralHistory];
+        currentConversationId = conversationId;
+        
+        document.getElementById('welcomeScreen').style.display = 'none';
+        scrollToBottom();
+        
+        return true;
+    }
+    return false;
+}
+// Send message
 async function sendMessage() {
     const input = document.getElementById('promptInput');
     const prompt = input.value.trim();
@@ -164,10 +247,10 @@ async function sendMessage() {
             body: JSON.stringify({
                 message: prompt,
                 conversation_history: mistralConversationHistory,
-                use_web_search: useWebSearch
+                use_web_search: useWebSearch,
+                conversation_id: currentConversationId
             })
         });
-
         const chatData = await chatResponse.json();
 
         removeTypingIndicator();
@@ -195,6 +278,7 @@ async function sendMessage() {
                         },
                         body: JSON.stringify({
                             image_prompt: chatData.image_prompt,
+                            conversation_id: currentConversationId,
                             use_lora: currentSettings.use_lora,
                             lora_filename: currentSettings.lora_filename,
                             num_steps: currentSettings.num_steps,
@@ -209,7 +293,6 @@ async function sendMessage() {
                     removeGeneratingIndicator();
 
                     if (generateData.success) {
-                        // Create the image message with the same format as history view
                         const messages = document.getElementById('messages');
                         const messageDiv = document.createElement('div');
                         messageDiv.className = 'message assistant';
@@ -260,14 +343,12 @@ async function sendMessage() {
                         messages.appendChild(messageDiv);
                         scrollToBottom();
 
-                        conversationHistory.push({
-                            user: prompt,
-                            assistant: generateData.filename,
-                            timestamp: new Date().toISOString()
-                        });
-
-                        updateHistoryList();
-                        await updateUserInfo(); // Update prompt counter
+                        // Save state after successful generation
+                        saveCurrentConversationState();
+                        
+                        // Reload history to show updated conversation
+                        await loadHistory();
+                        await updateUserInfo();
                     } else {
                         addErrorMessage(generateData.error || 'Failed to generate image.');
                     }
@@ -282,33 +363,34 @@ async function sendMessage() {
                 await streamText(chatData.response, responseMsg);
                 finalizeStreamingMessage();
                 mistralConversationHistory.push({ role: 'assistant', content: chatData.response });
+                saveCurrentConversationState();
                 await updateUserInfo();
             }
             else if (chatData.awaiting_photo_confirmation && chatData.photo_result) {
-                // Photo search result - show preview with confirmation
                 const responseMsg = addStreamingMessage('assistant', '');
                 await streamText(chatData.response, responseMsg);
                 finalizeStreamingMessage();
                 
-                // Add photo grid
                 if (chatData.photo_result.results && chatData.photo_result.results.length > 0) {
                     addPhotoGrid(chatData.photo_result.results);
                 }
                 
                 mistralConversationHistory.push({ role: 'assistant', content: chatData.response });
+                saveCurrentConversationState();
             }
             else if (chatData.photo_confirmed) {
-                // Photo confirmed and saved
                 const responseMsg = addStreamingMessage('assistant', '');
                 await streamText(chatData.response, responseMsg);
                 finalizeStreamingMessage();
                 mistralConversationHistory.push({ role: 'assistant', content: chatData.response });
+                saveCurrentConversationState();
             }
             else {
                 const responseMsg = addStreamingMessage('assistant', '');
                 await streamText(chatData.response, responseMsg);
                 finalizeStreamingMessage();
                 mistralConversationHistory.push({ role: 'assistant', content: chatData.response });
+                saveCurrentConversationState();
             }
         } else {
             addErrorMessage(chatData.error || 'Chat failed. Please try again.');
@@ -733,8 +815,8 @@ async function loadHistory() {
         const response = await fetch('/api/history', { headers: getAuthHeaders() });
         const data = await response.json();
 
-        if (data.success && data.history) {
-            conversationHistory = data.history;
+        if (data.success && data.conversations) {
+            conversationHistory = data.conversations;
             updateHistoryList();
         }
     } catch (error) {
@@ -742,37 +824,180 @@ async function loadHistory() {
     }
 }
 
-// Update history list in sidebar
+// Update history list to show conversations
 function updateHistoryList() {
     const historyList = document.getElementById('historyList');
 
-    if (conversationHistory.length === 0) {
+    if (!conversationHistory || conversationHistory.length === 0) {
         historyList.innerHTML = '<p style="color: var(--text-secondary); font-size: 13px; padding: 12px;">No history yet</p>';
         return;
     }
 
     historyList.innerHTML = conversationHistory
-        .map((item) => {
-            // Use user's original message first
-            const userText = item.user_message || item.prompt || '';
-            const fallback = item.ai_response || item.image_prompt || 'Untitled';
-            const displayText = userText || fallback;
-            const preview = displayText.length > 50 ? displayText.substring(0, 50) + '...' : displayText;
-            const timestamp = item.timestamp ? new Date(item.timestamp).toLocaleDateString() : '';
+        .map((conv) => {
+            const preview = conv.preview || 'New Chat';
+            const timestamp = conv.last_updated ? new Date(conv.last_updated).toLocaleDateString() : '';
+            const messageCount = conv.message_count || 1;
+            const isActive = conv.conversation_id === currentConversationId;
 
             return `
                 <div class="history-item-wrapper">
-                    <button class="history-item" onclick="viewHistoryItem(${item.id})" title="${escapeHtml(displayText)}">
+                    <button class="history-item ${isActive ? 'active' : ''}" 
+                            onclick="loadConversation('${conv.conversation_id}')" 
+                            title="${escapeHtml(preview)}">
                         <span class="history-item-text">${escapeHtml(preview)}</span>
-                        ${timestamp ? `<span class="history-item-date">${timestamp}</span>` : ''}
+                        <span class="history-item-date">${timestamp} • ${messageCount} messages</span>
                     </button>
-                    <button class="history-item-delete" onclick="deleteHistoryItem(event, ${item.id})" title="Delete">
-                        Delete
+                    <button class="history-item-delete" onclick="deleteConversation(event, '${conv.conversation_id}')" title="Delete">
+                        🗑️
                     </button>
                 </div>
             `;
         })
         .join('');
+}
+
+// Load entire conversation
+async function loadConversation(conversationId) {
+    // Save current state before switching
+    if (currentConversationId && document.getElementById('messages').innerHTML.trim() !== '') {
+        saveCurrentConversationState();
+    }
+    
+    // Check if conversation is in memory (unsaved new chat)
+    if (restoreConversationState(conversationId)) {
+        console.log('✓ Restored conversation from memory:', conversationId);
+        return;
+    }
+    
+    // Otherwise load from database
+    try {
+        const response = await fetch(`/api/history/${conversationId}`, { 
+            headers: getAuthHeaders() 
+        });
+        const data = await response.json();
+
+        if (data.success && data.messages) {
+            // Clear current view
+            document.getElementById('messages').innerHTML = '';
+            document.getElementById('welcomeScreen').style.display = 'none';
+            
+            // Set current conversation ID
+            currentConversationId = conversationId;
+            
+            // Clear conversation history for fresh start
+            mistralConversationHistory = [];
+            
+            // Display all messages in order
+            for (const msg of data.messages) {
+                // Show user message
+                addMessage('user', msg.user_message);
+                
+                // Add to Mistral history
+                mistralConversationHistory.push({
+                    role: 'user',
+                    content: msg.user_message
+                });
+                
+                // Show AI response if it's a text message
+                if (msg.ai_response && msg.message_type !== 'image') {
+                    addMessage('assistant', msg.ai_response);
+                    mistralConversationHistory.push({
+                        role: 'assistant',
+                        content: msg.ai_response
+                    });
+                }
+                
+                // Show image if exists
+                if (msg.image_path && msg.message_type === 'image') {
+                    const imageName = msg.image_path.split('/').pop() || msg.image_path.split('\\').pop();
+                    const imageUrl = `/outputs/${imageName}`;
+                    const fullPrompt = msg.image_prompt || '[No refined prompt available]';
+                    
+                    const messages = document.getElementById('messages');
+                    const messageDiv = document.createElement('div');
+                    messageDiv.className = 'message assistant';
+                    
+                    messageDiv.innerHTML = `
+                        <div class="message-avatar"><img src="/photos/zypher.jpeg" alt="AI" class="avatar-logo"></div>
+                        <div class="message-content">
+                            <div class="message-text markdown-content">
+                                <strong>Generated Image</strong><br>
+                                <details style="margin-top: 8px;">
+                                    <summary style="cursor: pointer; color: var(--text-secondary); font-size: 0.9em;">
+                                        View full generation prompt
+                                    </summary>
+                                    <div style="margin-top: 8px; padding: 12px; background: var(--bg-secondary); border-radius: 6px; font-size: 0.85em; line-height: 1.6; white-space: pre-wrap;">
+                                        ${escapeHtml(fullPrompt)}
+                                    </div>
+                                </details>
+                            </div>
+                            <div class="message-image">
+                                <img src="${imageUrl}" alt="Generated logo" 
+                                    onerror="this.parentElement.innerHTML='<p style=\\'color: var(--text-secondary); padding: 20px; text-align: center;\\'>Image not found</p>'">
+                            </div>
+                            <div class="message-metadata">
+                                <div class="metadata-row">
+                                    <span class="metadata-label">Generated:</span>
+                                    <span>${msg.timestamp ? new Date(msg.timestamp).toLocaleString() : 'Unknown'}</span>
+                                </div>
+                                <button class="download-btn" onclick="downloadImage('${imageUrl}', '${imageName}')">
+                                    Download
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    messages.appendChild(messageDiv);
+                }
+            }
+            
+            // Save loaded state to memory
+            saveCurrentConversationState();
+            
+            scrollToBottom();
+        } else {
+            alert('Could not load conversation');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to load conversation');
+    }
+}
+
+
+// Delete conversation
+async function deleteConversation(event, conversationId) {
+    event.stopPropagation();
+
+    if (!confirm('Delete this entire conversation?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/history/conversation/${conversationId}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            // Remove from local array
+            conversationHistory = conversationHistory.filter(
+                conv => conv.conversation_id !== conversationId
+            );
+            updateHistoryList();
+            
+            // If we're currently viewing this conversation, start a new chat
+            if (currentConversationId === conversationId) {
+                newChat();
+            }
+        } else {
+            alert('Could not delete conversation: ' + (data.error || 'Unknown error'));
+        }
+    } catch (error) {
+        console.error('Error deleting conversation:', error);
+        alert('Failed to delete conversation');
+    }
 }
 
 // View history item 
@@ -878,13 +1103,13 @@ async function deleteHistoryItem(event, historyId) {
 
 // Clear all history
 async function clearAllHistory() {
-    if (!confirm('Are you sure you want to delete ALL history? This cannot be undone.')) {
+    if (!confirm('Are you sure you want to delete ALL conversations? This cannot be undone.')) {
         return;
     }
 
     try {
-        const response = await fetch('/api/history/clear', {
-            method: 'POST',
+        const response = await fetch('/api/history', {
+            method: 'DELETE',
             headers: getAuthHeaders()
         });
         const data = await response.json();
@@ -892,7 +1117,6 @@ async function clearAllHistory() {
         if (data.success) {
             conversationHistory = [];
             updateHistoryList();
-            // Optionally start a new chat
             newChat();
         } else {
             alert('Could not clear history: ' + (data.error || 'Unknown error'));
