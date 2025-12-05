@@ -24,16 +24,6 @@ function generateConversationId() {
     return 'conv_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 }
 
-// New chat function
-function newChat() {
-    conversationHistory = [];
-    mistralConversationHistory = [];
-    currentConversationId = generateConversationId(); // Generate new conversation ID
-    document.getElementById('messages').innerHTML = '';
-    document.getElementById('welcomeScreen').style.display = 'flex';
-    document.getElementById('promptInput').value = '';
-    focusInput();
-}
 // Initialize conversation ID on page load
 document.addEventListener('DOMContentLoaded', () => {
     currentConversationId = generateConversationId();
@@ -719,19 +709,18 @@ function toggleSettings() {
         updateWidthValue(currentSettings.width);
         updateHeightValue(currentSettings.height);
 
-    // Populate profile fields if available
-    const fnameEl = document.getElementById('fnameInput');
-    const lnameEl = document.getElementById('lnameInput');
-    if (userProfile) {
-        if (fnameEl) fnameEl.value = userProfile.fname || '';
-        if (lnameEl) lnameEl.value = userProfile.lname || '';
-    } else {
-        if (fnameEl) fnameEl.value = '';
-        if (lnameEl) lnameEl.value = '';
-    }
+        // Populate profile fields if available
+        const fnameEl = document.getElementById('fnameInput');
+        const lnameEl = document.getElementById('lnameInput');
+        if (userProfile) {
+            if (fnameEl) fnameEl.value = userProfile.fname || '';
+            if (lnameEl) lnameEl.value = userProfile.lname || '';
+        } else {
+            if (fnameEl) fnameEl.value = '';
+            if (lnameEl) lnameEl.value = '';
+        }
 
-    // Reload LoRA list to get latest
-    if (modal.classList.contains('active')) {
+        // Reload LoRA list to get latest
         loadAvailableLoras();
     }
 }
