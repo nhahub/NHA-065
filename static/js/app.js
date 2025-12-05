@@ -679,29 +679,45 @@ function toggleSidebar() {
 // Toggle settings modal
 function toggleSettings() {
     const modal = document.getElementById('settingsModal');
+    const isOpening = !modal.classList.contains('active');
     modal.classList.toggle('active');
 
-    // Load current settings
-    const useLoraToggle = document.getElementById('useLoraToggle');
-    const loraSelect = document.getElementById('loraSelect');
-    const stepsSlider = document.getElementById('stepsSlider');
-    const widthSlider = document.getElementById('widthSlider');
-    const heightSlider = document.getElementById('heightSlider');
+    // Only load settings when opening the modal
+    if (isOpening) {
+        // Load current settings
+        const useLoraToggle = document.getElementById('useLoraToggle');
+        const loraSelect = document.getElementById('loraSelect');
+        const stepsSlider = document.getElementById('stepsSlider');
+        const widthSlider = document.getElementById('widthSlider');
+        const heightSlider = document.getElementById('heightSlider');
 
-    if (useLoraToggle) {
-        useLoraToggle.checked = currentSettings.use_lora;
-        toggleLoraSettings(); // Show/hide LoRA selection based on checkbox
-    }
-    if (loraSelect && currentSettings.lora_filename) {
-        loraSelect.value = currentSettings.lora_filename;
-    }
-    if (stepsSlider) stepsSlider.value = currentSettings.num_steps;
-    if (widthSlider) widthSlider.value = currentSettings.width;
-    if (heightSlider) heightSlider.value = currentSettings.height;
+        if (useLoraToggle) {
+            useLoraToggle.checked = currentSettings.use_lora;
+            toggleLoraSettings(); // Show/hide LoRA selection based on checkbox
+        }
+        
+        // Ensure LoRA dropdown is populated before setting value
+        if (loraSelect) {
+            // Wait for LoRA list to be loaded if not already
+            if (availableLoras.length > 0 && currentSettings.lora_filename) {
+                loraSelect.value = currentSettings.lora_filename;
+            } else if (currentSettings.lora_filename) {
+                // Force reload LoRA list and then set value
+                loadAvailableLoras().then(() => {
+                    if (loraSelect) {
+                        loraSelect.value = currentSettings.lora_filename;
+                    }
+                });
+            }
+        }
+        
+        if (stepsSlider) stepsSlider.value = currentSettings.num_steps;
+        if (widthSlider) widthSlider.value = currentSettings.width;
+        if (heightSlider) heightSlider.value = currentSettings.height;
 
-    updateStepsValue(currentSettings.num_steps);
-    updateWidthValue(currentSettings.width);
-    updateHeightValue(currentSettings.height);
+        updateStepsValue(currentSettings.num_steps);
+        updateWidthValue(currentSettings.width);
+        updateHeightValue(currentSettings.height);
 
     // Populate profile fields if available
     const fnameEl = document.getElementById('fnameInput');

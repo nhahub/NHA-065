@@ -328,18 +328,23 @@ class LogoReferenceAgent:
             typo_desc = visual_features['typography'][0]
             prompt_parts.append(f"with {typo_desc} typography")
         
-        # Add logo-specific constraints
-        prompt_parts.append("clean and minimal")
-        prompt_parts.append("scalable vector style")
-        prompt_parts.append("professional and modern")
-        prompt_parts.append("suitable for branding")
+        # Add logo-specific constraints (keep concise for CLIP's 77 token limit)
+        prompt_parts.append("clean minimal")
+        prompt_parts.append("professional modern")
         
         # Join all parts
         final_prompt = ', '.join(prompt_parts)
         
-        # Ensure it doesn't exceed reasonable length
-        if len(final_prompt) > 500:
-            final_prompt = final_prompt[:497] + '...'
+        # CRITICAL: CLIP has a 77 token limit (~300-350 characters safe limit)
+        # Truncate intelligently to avoid diffuser errors
+        if len(final_prompt) > 300:
+            # Keep the most important parts (brand, industry, main features)
+            truncated_parts = prompt_parts[:6]  # Keep first 6 most important parts
+            final_prompt = ', '.join(truncated_parts)
+            
+            # Final safety check
+            if len(final_prompt) > 300:
+                final_prompt = final_prompt[:297] + '...'
         
         return final_prompt
     
