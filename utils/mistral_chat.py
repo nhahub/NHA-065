@@ -89,12 +89,14 @@ class MistralChatManager:
         
         return False
     
-    def extract_photo_search_query(self, text: str) -> Optional[str]:
+    def extract_photo_search_query(self, text: str, conversation_history: Optional[List[Dict]] = None) -> Optional[str]:
         """
         Extract the subject/query for photo search from user message
+        Uses conversation history for context when needed
         
         Args:
             text (str): User message
+            conversation_history (Optional[List[Dict]]): Recent conversation for context
             
         Returns:
             Optional[str]: Extracted search query or None
@@ -131,6 +133,22 @@ class MistralChatManager:
                 
                 if query and len(query) > 2:  # Ensure we got something meaningful
                     return query
+        
+        # If no specific brand found and user said something generic like "search for it" or "show me"
+        # Try to extract context from conversation history
+        if conversation_history and len(conversation_history) > 0:
+            text_lower = text.lower().strip()
+            generic_phrases = ['search for it', 'show me', 'find it', 'look it up', 'get it', 'that one', 'search it']
+            
+            if any(phrase in text_lower for phrase in generic_phrases):
+                # Look for brand names or topics in recent conversation
+                for msg in reversed(conversation_history[-3:]):  # Check last 3 messages
+                    content = msg.get('content', '')
+                    # Try to find brand names (capitalized words followed by context words)
+                    context_match = re.search(r'\b([A-Z][\w]+(?:\s+[A-Z][\w]+)?)\b.*(?:logo|brand|company|design)', content, re.IGNORECASE)
+                    if context_match:
+                        brand_name = context_match.group(1).strip()
+                        return f"{brand_name} logo"
         
         return None
     
@@ -305,6 +323,12 @@ class MistralChatManager:
                 web_search_query = self.extract_web_search_query(assistant_message)
                 if web_search_query:
                     # Mistral wants to search the web
+                    # Fallback: if query is too short/generic, try extracting from user message
+                    if len(web_search_query.split()) < 2:
+                        fallback_query = self.extract_photo_search_query(user_message, conversation_history)
+                        if fallback_query:
+                            web_search_query = fallback_query
+                    
                     try:
                         photo_result = self.logo_agent.search_for_photo(web_search_query)
                         

@@ -101,7 +101,7 @@ def chat_with_ai():
                 mistral_chat.pending_photo_requests.pop(uid)
                 
                 # Check if user provided a new search query in their message
-                new_query = mistral_chat.extract_photo_search_query(user_message)
+                new_query = mistral_chat.extract_photo_search_query(user_message, data.get('conversation_history', []))
                 
                 if new_query and new_query.lower() != original_query.lower():
                     # User provided new search terms, search with those
@@ -140,7 +140,7 @@ def chat_with_ai():
         
         # Check if this is a NEW photo search request
         elif mistral_chat.is_photo_search_request(user_message):
-            search_query = mistral_chat.extract_photo_search_query(user_message)
+            search_query = mistral_chat.extract_photo_search_query(user_message, data.get('conversation_history', []))
             
             if search_query:
                 try:
