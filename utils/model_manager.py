@@ -252,7 +252,23 @@ class ModelManager:
             mode_str = " + ".join(mode) if mode else "base model"
             
             print(f"Generating image with {mode_str}...")
-            print(f"Prompt: {prompt}")
+            print(f"Original prompt length: {len(prompt)} chars")
+            
+            # CRITICAL: CLIP text encoder has a 77 token limit (~300-350 chars safe limit)
+            # Truncate prompt intelligently to avoid indexing errors
+            max_prompt_length = 300  # Conservative limit to stay under 77 tokens
+            
+            if len(prompt) > max_prompt_length:
+                print(f"⚠️ Prompt too long ({len(prompt)} chars), truncating to {max_prompt_length} chars")
+                # Truncate at word boundary to avoid cutting mid-word
+                truncated_prompt = prompt[:max_prompt_length].rsplit(' ', 1)[0]
+                # Add ellipsis to indicate truncation
+                if not truncated_prompt.endswith('.'):
+                    truncated_prompt += '...'
+                prompt = truncated_prompt
+                print(f"✓ Truncated prompt: {prompt}")
+            
+            print(f"Final prompt: {prompt}")
             
             # Prepare generation arguments
             # ALWAYS include the text prompt - it describes what to create

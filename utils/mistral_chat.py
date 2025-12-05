@@ -664,29 +664,60 @@ Respond ONLY with this JSON format:
     def extract_image_prompt(self, response_text: str) -> Optional[str]:
         """
         Extract image generation prompt from Mistral response if it contains JSON action
+        Truncates prompts that are too long for CLIP text encoder (77 token limit)
         
         Args:
             response_text (str): Mistral response
             
         Returns:
-            Optional[str]: Extracted prompt or None
+            Optional[str]: Extracted and truncated prompt or None
         """
         try:
             # Try to parse as JSON
             data = json.loads(response_text)
             if isinstance(data, dict) and data.get('action') == 'generate_image':
-                return data.get('prompt')
+                prompt = data.get('prompt')
+                if prompt:
+                    return self._truncate_prompt(prompt)
         except json.JSONDecodeError:
             # Try to extract JSON from text
             json_match = re.search(r'\{[^}]*"action"\s*:\s*"generate_image"[^}]*\}', response_text)
             if json_match:
                 try:
                     data = json.loads(json_match.group())
-                    return data.get('prompt')
+                    prompt = data.get('prompt')
+                    if prompt:
+                        return self._truncate_prompt(prompt)
                 except:
                     pass
         
         return None
+    
+    def _truncate_prompt(self, prompt: str, max_length: int = 300) -> str:
+        """
+        Intelligently truncate prompt to stay under CLIP's 77 token limit
+        
+        Args:
+            prompt (str): Original prompt
+            max_length (int): Maximum character length (default 300 for ~75 tokens)
+            
+        Returns:
+            str: Truncated prompt
+        """
+        if len(prompt) <= max_length:
+            return prompt
+        
+        print(f"⚠️ Prompt too long ({len(prompt)} chars), truncating to {max_length} chars")
+        
+        # Truncate at word boundary to avoid cutting mid-word
+        truncated = prompt[:max_length].rsplit(' ', 1)[0]
+        
+        # Add ellipsis if doesn't end with punctuation
+        if truncated and not truncated[-1] in '.!?,;':
+            truncated += '...'
+        
+        print(f"✓ Truncated prompt: {truncated}")
+        return truncated
     
     def extract_web_search_query(self, response_text: str) -> Optional[str]:
         """

@@ -147,6 +147,8 @@ MISTRAL_SYSTEM_PROMPT = """You are Zypher AI, an intelligent AI assistant specia
 ```json
 {"action": "generate_image", "prompt": "detailed, professional image generation prompt"}
 ```
+⚠️ CRITICAL: Keep prompts under 300 characters! Diffusion models have token limits.
+Focus on: brand name, style, colors, main elements. Avoid long descriptions.
 
 **For normal conversation:**
 Respond naturally in plain text. Be helpful, friendly, and guide users.
