@@ -5,6 +5,7 @@ Gathers real-time visual references and generates optimized logo prompts using B
 import os
 import json
 import requests
+import time
 from typing import Dict, List, Optional, Tuple
 from dotenv import load_dotenv
 import re
@@ -23,10 +24,24 @@ class LogoReferenceAgent:
         self.brave_api_key = os.getenv('BRAVE_SEARCH_API_KEY', '')
         self.brave_search_endpoint = 'https://api.search.brave.com/res/v1/web/search'
         self.brave_image_search_endpoint = 'https://api.search.brave.com/res/v1/images/search'
+        self.last_api_call_time = 0  # Track last API call for rate limiting
+        self.rate_limit_delay = 1.1  # Brave API: max 1 request/second, use 1.1s to be safe
         
         if not self.brave_api_key or self.brave_api_key == 'your_brave_api_key_here':
             print("⚠️  WARNING: BRAVE_SEARCH_API_KEY not set in .env file")
             print("   Get your API key from: https://brave.com/search/api/")
+    
+    def _enforce_rate_limit(self):
+        """Ensure at least 1 second between Brave API calls (Brave limit: 1 req/sec)."""
+        current_time = time.time()
+        time_since_last_call = current_time - self.last_api_call_time
+        
+        if time_since_last_call < self.rate_limit_delay:
+            wait_time = self.rate_limit_delay - time_since_last_call
+            print(f"⏱️ Rate limiting: waiting {wait_time:.2f}s...")
+            time.sleep(wait_time)
+        
+        self.last_api_call_time = time.time()
     
     def parse_user_request(self, user_message: str) -> Dict:
         """
@@ -121,6 +136,9 @@ class LogoReferenceAgent:
             }]
         
         try:
+            # Enforce rate limit before API call
+            self._enforce_rate_limit()
+            
             headers = {
                 'Accept': 'application/json',
                 'X-Subscription-Token': self.brave_api_key
@@ -328,18 +346,23 @@ class LogoReferenceAgent:
             typo_desc = visual_features['typography'][0]
             prompt_parts.append(f"with {typo_desc} typography")
         
-        # Add logo-specific constraints
-        prompt_parts.append("clean and minimal")
-        prompt_parts.append("scalable vector style")
-        prompt_parts.append("professional and modern")
-        prompt_parts.append("suitable for branding")
+        # Add logo-specific constraints (keep concise for CLIP's 77 token limit)
+        prompt_parts.append("clean minimal")
+        prompt_parts.append("professional modern")
         
         # Join all parts
         final_prompt = ', '.join(prompt_parts)
         
-        # Ensure it doesn't exceed reasonable length
-        if len(final_prompt) > 500:
-            final_prompt = final_prompt[:497] + '...'
+        # CRITICAL: CLIP has a 77 token limit (~300-350 characters safe limit)
+        # Truncate intelligently to avoid diffuser errors
+        if len(final_prompt) > 300:
+            # Keep the most important parts (brand, industry, main features)
+            truncated_parts = prompt_parts[:6]  # Keep first 6 most important parts
+            final_prompt = ', '.join(truncated_parts)
+            
+            # Final safety check
+            if len(final_prompt) > 300:
+                final_prompt = final_prompt[:297] + '...'
         
         return final_prompt
     
@@ -436,6 +459,7 @@ class LogoReferenceAgent:
     def search_for_photo(self, query: str, max_results: int = 3) -> Dict:
         """
         Search for multiple photos/logos using Brave Image Search API.
+        Returns direct image URLs from CDNs, image hosts, and accessible sources.
         
         Args:
             query (str): Search query for the photo/logo
@@ -451,114 +475,182 @@ class LogoReferenceAgent:
             }
         
         try:
+            # Enforce rate limit before API call
+            self._enforce_rate_limit()
+            
             headers = {
                 'Accept': 'application/json',
                 'X-Subscription-Token': self.brave_api_key
             }
             
-            # Use web search endpoint with image focus (image search API has stricter limits)
-            # Brave Image Search API may not support all parameters, so we use web search
+            # Add "logo" to query if not already present
+            search_query = query
+            if 'logo' not in query.lower():
+                search_query = f"{query} logo"
+            
+            # Clean query: remove special characters that might cause 422
+            search_query = search_query.strip()
+            # Remove multiple spaces
+            search_query = ' '.join(search_query.split())
+            
+            # Use Brave Image Search API for direct image URLs
             params = {
-                'q': f"{query} logo",  # Add 'logo' to get better results
-                'count': min(20, max_results * 4),  # Request more but respect API limits
-                'search_lang': 'en'
+                'q': search_query,
+                'count': min(max_results * 3, 20),  # Request more to filter, max 20
+                'search_lang': 'en',
+                'safesearch': 'strict'  # Brave API only accepts 'strict' or 'off', not 'moderate'
             }
             
+            print(f"🔍 Searching images for: {params['q']}")
+            print(f"📍 Using endpoint: {self.brave_image_search_endpoint}")
+            
             response = requests.get(
-                self.brave_search_endpoint,  # Use web search endpoint (more reliable)
+                self.brave_image_search_endpoint,  # Use IMAGE search endpoint
                 headers=headers,
                 params=params,
-                timeout=15  # Increased timeout for more results
+                timeout=15
             )
             
+            print(f"📊 Response status: {response.status_code}")
+            
             if response.status_code == 401:
+                print(f"❌ Authentication failed - check API key")
                 return {
                     'success': False,
                     'error': 'Invalid Brave Search API key. Please check your BRAVE_SEARCH_API_KEY in .env'
                 }
             
-            if response.status_code == 422:
-                # Fallback with simpler parameters
-                params = {
-                    'q': query,
-                    'count': 10
+            if response.status_code == 429:
+                print(f"⚠️ Rate limit hit")
+                return {
+                    'success': False,
+                    'error': 'Rate limit reached. Please try again in a moment.'
                 }
-                response = requests.get(
-                    self.brave_search_endpoint,
-                    headers=headers,
-                    params=params,
-                    timeout=10
-                )
+            
+            if response.status_code == 422:
+                print(f"⚠️ Invalid query format (422) - trying fallback")
+                # Don't raise, let it fall through to fallback
+                raise requests.exceptions.HTTPError(response=response)
             
             response.raise_for_status()
             data = response.json()
             
-            # Get web results which include thumbnails
-            web_results = data.get('web', {}).get('results', [])
+            # Get image results from Brave Image Search
+            image_data = data.get('results', [])
             
-            if not web_results:
-                return {
-                    'success': False,
-                    'error': f'No images found for "{query}". Try a different search term.'
-                }
+            print(f"📦 API returned {len(image_data)} total results")
             
-            # Process and validate image results from web search
+            if not image_data:
+                print(f"⚠️ No results from image API, trying fallback")
+                return self._fallback_web_search(query, max_results)
+            
+            # Filter for accessible image sources
+            accessible_sources = [
+                'wikimedia.org', 'wikipedia.org', 'imgur.com', 
+                'cloudinary.com', 'wp.com', 'wordpress.com',
+                'blogspot.com', 'tumblr.com', 'flickr.com',
+                'pinimg.com', 'medium.com', 'githubusercontent.com',
+                'googleusercontent.com', 'staticflickr.com',
+                'unsplash.com', 'pexels.com', 'pixabay.com',
+                'cdninstagram.com', 'fbcdn.net', 'twimg.com'
+            ]
+            
+            # Blocked sources (known to block downloads)
+            blocked_sources = [
+                'shutterstock.com', 'gettyimages.com', 'istockphoto.com',
+                'stock.adobe.com', 'alamy.com', 'dreamstime.com'
+            ]
+            
+            # Process and prioritize image results
             image_results = []
             
-            for result in web_results:
+            for result in image_data:
                 if len(image_results) >= max_results:
                     break
                 
-                # Get thumbnail from web result
-                thumbnail_data = result.get('thumbnail', {})
-                thumbnail_url = thumbnail_data.get('src', '')
-                
-                # Also check for page_fetched and meta_url for additional context
+                # Get image properties
+                properties = result.get('properties', {})
+                thumbnail = result.get('thumbnail', {})
                 page_url = result.get('url', '')
                 
-                if not thumbnail_url:
+                # Get direct image URL
+                image_url = properties.get('url', '')
+                thumbnail_url = thumbnail.get('src', '')
+                
+                if not image_url:
                     continue
                 
                 # Validate URL format
-                if not (thumbnail_url.startswith('http://') or thumbnail_url.startswith('https://')):
+                if not (image_url.startswith('http://') or image_url.startswith('https://')):
+                    continue
+                
+                # Check if from blocked source
+                is_blocked = any(blocked in image_url.lower() for blocked in blocked_sources)
+                if is_blocked:
+                    print(f"⚠️ Skipping blocked source: {image_url}")
                     continue
                 
                 # Get source information
-                hostname = result.get('meta_url', {}).get('hostname', 'web')
-                title = result.get('title', 'Logo Image')
-                description = result.get('description', '')
+                source_url = properties.get('page', page_url)
+                hostname = ''
+                try:
+                    from urllib.parse import urlparse
+                    hostname = urlparse(image_url).netloc
+                except:
+                    hostname = 'web'
                 
-                # Check if from trusted sources
-                is_trusted = any(trusted in hostname.lower() for trusted in [
-                    'wikipedia.org', 'wikimedia.org', 'commons.wikimedia.org',
-                    'official', 'logo', 'brand'
-                ])
+                title = result.get('title', 'Logo Image')
+                
+                # Check if from trusted/accessible source
+                is_accessible = any(source in image_url.lower() for source in accessible_sources)
+                
+                # Prioritize accessible sources
+                priority_score = 10 if is_accessible else 5
+                
+                # Check image dimensions (prefer larger images)
+                width = properties.get('width', 0)
+                height = properties.get('height', 0)
+                
+                # Skip very small images
+                if width > 0 and height > 0 and (width < 100 or height < 100):
+                    print(f"⚠️ Skipping small image: {width}x{height}")
+                    continue
                 
                 image_results.append({
-                    'image_url': thumbnail_url,
-                    'thumbnail_url': thumbnail_url,
-                    'full_image_url': page_url,  # Use page URL as fallback
-                    'fallback_url': page_url,
+                    'image_url': image_url,
+                    'thumbnail_url': thumbnail_url or image_url,  # Use full image if no thumbnail
+                    'full_image_url': image_url,
+                    'fallback_url': thumbnail_url,
                     'title': title,
-                    'source': page_url,
-                    'description': description,
+                    'source': source_url,
+                    'description': f"Logo image - {width}x{height}px" if width and height else "Logo image",
                     'hostname': hostname,
-                    'is_trusted': is_trusted,
-                    'width': 0,  # Web search doesn't provide dimensions
-                    'height': 0
+                    'is_accessible': is_accessible,
+                    'is_trusted': is_accessible,
+                    'width': width,
+                    'height': height,
+                    'priority': priority_score
                 })
             
             if not image_results:
                 return {
                     'success': False,
-                    'error': f'No valid images found for "{query}". Try a different search term.'
+                    'error': f'No accessible images found for "{query}". Try a different search term or brand name.'
                 }
+            
+            # Sort by priority (accessible sources first) and size
+            image_results.sort(key=lambda x: (x['priority'], x['width'] * x['height']), reverse=True)
+            
+            # Limit to requested number
+            image_results = image_results[:max_results]
+            
+            print(f"✅ Found {len(image_results)} accessible images")
             
             return {
                 'success': True,
-                'results': image_results,
                 'query': query,
-                'total_results': len(image_results)
+                'results': image_results,
+                'count': len(image_results)
             }
             
         except requests.exceptions.Timeout:
@@ -567,20 +659,162 @@ class LogoReferenceAgent:
                 'error': 'Search request timed out. Please try again.'
             }
         except requests.exceptions.HTTPError as e:
+            print(f"⚠️ HTTP Error {e.response.status_code}: {e}")
             if e.response.status_code == 422:
+                # Fallback to web search when image search fails
+                print(f"⚠️ Image search failed (422), falling back to web search...")
+                return self._fallback_web_search(query, max_results)
+            elif e.response.status_code == 429:
                 return {
                     'success': False,
-                    'error': f'Invalid search query. Please try different search terms.'
+                    'error': 'Rate limit reached. Please try again in a moment.'
                 }
-            return {
-                'success': False,
-                'error': f'Search error: {e.response.status_code}'
-            }
+            # Try fallback for other HTTP errors too
+            print(f"⚠️ Trying fallback for HTTP {e.response.status_code}")
+            return self._fallback_web_search(query, max_results)
         except Exception as e:
-            print(f"Error searching for photo: {e}")
+            print(f"❌ Error searching for photo: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            # Try fallback
+            try:
+                print(f"⚠️ Attempting fallback after exception...")
+                return self._fallback_web_search(query, max_results)
+            except Exception as fallback_error:
+                print(f"❌ Fallback also failed: {fallback_error}")
+                return {
+                    'success': False,
+                    'error': f'Search failed: {str(e)}'
+                }
+    
+    def _fallback_web_search(self, query: str, max_results: int = 3) -> Dict:
+        """
+        Fallback to web search with open graph images when image search fails.
+        """
+        try:
+            print(f"🔄 Using web search fallback for: {query}")
+            
+            if not self.brave_api_key or self.brave_api_key == 'your_brave_api_key_here':
+                return {
+                    'success': False,
+                    'error': 'Brave Search API key not configured'
+                }
+            
+            # Enforce rate limit before fallback API call
+            self._enforce_rate_limit()
+            
+            headers = {
+                'Accept': 'application/json',
+                'X-Subscription-Token': self.brave_api_key
+            }
+            
+            # Clean query for web search
+            search_query = f"{query} logo".strip()
+            search_query = ' '.join(search_query.split())
+            
+            params = {
+                'q': search_query,
+                'count': 20,  # Get more to filter
+                'search_lang': 'en'
+            }
+            
+            print(f"📍 Web search endpoint: {self.brave_search_endpoint}")
+            
+            response = requests.get(
+                self.brave_search_endpoint,
+                headers=headers,
+                params=params,
+                timeout=15
+            )
+            
+            print(f"📊 Web search response: {response.status_code}")
+            response.raise_for_status()
+            data = response.json()
+            
+            web_results = data.get('web', {}).get('results', [])
+            print(f"📦 Web search returned {len(web_results)} results")
+            
+            if not web_results:
+                return {
+                    'success': False,
+                    'error': f'No results found for "{query}". Try a different search term.'
+                }
+            
+            # Extract images from web results
+            image_results = []
+            
+            for result in web_results:
+                if len(image_results) >= max_results:
+                    break
+                
+                # Try to get thumbnail or open graph image
+                thumbnail = result.get('thumbnail', {})
+                thumbnail_url = thumbnail.get('src', '')
+                
+                # Also check meta_url for better source info
+                meta_url = result.get('meta_url', {})
+                hostname = meta_url.get('hostname', 'web')
+                
+                if not thumbnail_url:
+                    continue
+                
+                # Validate URL
+                if not thumbnail_url.startswith('http'):
+                    continue
+                
+                title = result.get('title', 'Logo Image')
+                description = result.get('description', '')
+                page_url = result.get('url', '')
+                
+                # Check for accessible sources
+                accessible_sources = ['wikimedia', 'wikipedia', 'imgur', 'cloudinary', 'wp.com']
+                is_accessible = any(src in thumbnail_url.lower() for src in accessible_sources)
+                
+                image_results.append({
+                    'image_url': thumbnail_url,
+                    'thumbnail_url': thumbnail_url,
+                    'full_image_url': thumbnail_url,
+                    'fallback_url': thumbnail_url,
+                    'title': title,
+                    'source': page_url,
+                    'description': description or f"Logo from {hostname}",
+                    'hostname': hostname,
+                    'is_accessible': is_accessible,
+                    'is_trusted': is_accessible,
+                    'width': 0,
+                    'height': 0,
+                    'priority': 5
+                })
+            
+            if not image_results:
+                return {
+                    'success': False,
+                    'error': f'No valid images found for "{query}". Try a different brand name.'
+                }
+            
+            print(f"✅ Web search fallback found {len(image_results)} images")
+            
+            return {
+                'success': True,
+                'query': query,
+                'results': image_results,
+                'count': len(image_results)
+            }
+            
+        except Exception as e:
+            print(f"Fallback web search also failed: {e}")
+            
+            # Check if it's a rate limit error
+            if '429' in str(e):
+                return {
+                    'success': False,
+                    'error': '⏱️ **Rate Limit Reached**\n\nThe Brave Search API has usage limits.\n\n**What to do:**\n• Wait a few minutes and try again\n• OR skip the reference and describe what you want!\n\n*I can create great logos without reference images!* 🎨',
+                    'rate_limited': True
+                }
+            
             return {
                 'success': False,
-                'error': f'Search error: {str(e)}'
+                'error': f'Could not find images for "{query}". Try a different search term or describe your logo idea directly!'
             }
     
     def format_photo_preview(self, photo_result: Dict) -> str:
