@@ -55,7 +55,7 @@ class ModelManager:
             
             self.pipeline = FluxPipeline.from_pretrained(
                 config.BASE_MODEL_ID,
-                torch_dtype=torch.bfloat16 if self.device != "cpu" else torch.float32,
+                dtype=torch.bfloat16 if self.device != "cpu" else torch.float32,
                 token=self.hf_token if self.hf_token and self.hf_token != "your_huggingface_token_here" else None
             )
             self.pipeline.to(self.device)
@@ -150,17 +150,19 @@ class ModelManager:
         
         try:
             print("Loading IP-Adapter...")
+            # Note: IP-Adapter is designed for SD 1.5, not fully compatible with Flux
             # Load IP-Adapter weights with authentication token
             self.pipeline.load_ip_adapter(
                 "h94/IP-Adapter", 
-                subfolder="models",
-                weight_name="ip-adapter_sd15.bin",
+                subfolder="sdxl_models",
+                weight_name="ip-adapter_sdxl.bin",
                 token=self.hf_token if self.hf_token and self.hf_token != "your_huggingface_token_here" else None
             )
             self.ip_adapter_loaded = True
             print("✓ IP-Adapter loaded successfully")
         except Exception as e:
-            print(f"Note: IP-Adapter loading failed: {e}")
+            print(f"Note: IP-Adapter not available for Flux models: {e}")
+            print("IP-Adapter is currently only supported for Stable Diffusion models.")
             print("Continuing without IP-Adapter support...")
             self.ip_adapter_loaded = False
     
@@ -190,8 +192,14 @@ class ModelManager:
             self.load_base_model()
         
         # Load IP-Adapter if reference image provided and not loaded
-        if reference_image is not None and not self.ip_adapter_loaded:
-            self.load_ip_adapter()
+        # Note: IP-Adapter is not fully compatible with Flux models yet
+        # We'll skip IP-Adapter for Flux and just use the reference as visual guidance
+        if reference_image is not None:
+            print("Note: Reference image provided but IP-Adapter is not compatible with Flux models.")
+            print("Image will be generated using the text prompt only.")
+            # Don't attempt to load IP-Adapter for Flux
+            # if not self.ip_adapter_loaded:
+            #     self.load_ip_adapter()
         
         # Process reference image if provided
         if reference_image is not None:
