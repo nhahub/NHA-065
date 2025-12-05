@@ -107,6 +107,7 @@ class MistralChatManager:
             bool: True if requesting photo search
         """
         text_lower = text.lower()
+        print(f"🔍 Checking if photo search: '{text[:50]}...'")
         
         # Strong search indicators - these clearly mean "find existing"
         strong_search_patterns = [
@@ -144,6 +145,21 @@ class MistralChatManager:
                     # Check if recent context was about searching/viewing logos
                     if any(word in recent_context for word in ['search', 'find', 'show', 'logo', 'brand', 'reference']):
                         return True
+            
+            # Check if this is a refinement after rejection (e.g., "i want the red logo", "the performance one")
+            # These indicate user is continuing a search conversation
+            if any(rejection_word in recent_context for rejection_word in ['no problem', 'what would you like', 'search for instead', 'different', 'search again']):
+                # User is answering "what would you like to search for?"
+                refinement_indicators = [
+                    r'\bi\s+want\s+(?:the\s+)?[\w\s]+\s+logo\b',  # "i want the red logo"
+                    r'\bthe\s+[\w\s]+\s+logo\b',  # "the performance logo"
+                    r'\bfor\s+(?:the\s+)?[\w\s]+',  # "for the performance"
+                    r'\b[\w\s]+\s+(?:version|variant|one|model)\b',  # "performance version"
+                ]
+                
+                for pattern in refinement_indicators:
+                    if re.search(pattern, text_lower):
+                        return True
         
         # Check for "the X logo" pattern (lowercase - referring to existing brand)
         # But exclude if followed by generation words
@@ -160,10 +176,10 @@ class MistralChatManager:
         
         return False
     
-    def extract_photo_search_query(self, text: str, conversation_history: Optional[List[Dict]] = None) -> Optional[str]:
+    def extract_photo_search_query_with_ai(self, text: str, conversation_history: Optional[List[Dict]] = None) -> Optional[str]:
         """
-        Extract the subject/query for photo search from user message
-        Uses conversation history for context when needed
+        Use Mistral AI to analyze context and extract the search query intelligently.
+        This provides much better context understanding than regex patterns.
         
         Args:
             text (str): User message
@@ -172,6 +188,120 @@ class MistralChatManager:
         Returns:
             Optional[str]: Extracted search query or None
         """
+        print(f"🤖 Using Mistral AI to extract search query from: '{text}'")
+        
+        try:
+            # Build context from conversation history
+            context_messages = []
+            if conversation_history:
+                # Include last 5 messages for context
+                for msg in conversation_history[-5:]:
+                    role = msg.get('role', 'user')
+                    content = msg.get('content', '')
+                    if content:
+                        context_messages.append(f"{role.upper()}: {content}")
+            
+            context_str = "\n".join(context_messages) if context_messages else "No previous context"
+            
+            # Create AI prompt for query extraction
+            extraction_prompt = f"""You are helping extract a search query for a logo/brand image search.
+
+CONVERSATION HISTORY:
+{context_str}
+
+CURRENT USER MESSAGE:
+{text}
+
+TASK:
+Analyze the current message and conversation history to determine what logo/brand the user wants to search for.
+
+RULES:
+1. If the user mentions a specific brand name (e.g., "BMW", "Nike"), extract it
+2. If the user is refining a previous search (e.g., "the red one", "performance version"), combine the refinement with the brand from conversation history
+3. For refinements like "performance", "M", "sport", "racing" with BMW context, use "BMW M Performance" or similar
+4. If there's a color mentioned (red, black, white), include it: "BMW red logo"
+5. Return ONLY the search query, nothing else
+6. If unclear what to search for, return "UNCLEAR"
+
+EXAMPLES:
+- User says "BMW logo" → Return: "BMW logo"
+- Previous: "BMW logo", User says "the performance one" → Return: "BMW M Performance logo"
+- Previous: "BMW logo", User says "i want the red logo for the performance" → Return: "BMW M Performance red logo"
+- Previous: "Nike", User says "the swoosh" → Return: "Nike swoosh logo"
+
+Search query:"""
+
+            # Call Mistral AI
+            headers = {
+                'Authorization': f'Bearer {self.api_key}',
+                'Content-Type': 'application/json'
+            }
+            
+            payload = {
+                'model': self.model,
+                'messages': [
+                    {'role': 'user', 'content': extraction_prompt}
+                ],
+                'temperature': 0.3,  # Lower temperature for more consistent extraction
+                'max_tokens': 50  # Short response expected
+            }
+            
+            response = requests.post(
+                self.endpoint,
+                headers=headers,
+                json=payload,
+                timeout=10
+            )
+            
+            response.raise_for_status()
+            data = response.json()
+            
+            ai_query = data['choices'][0]['message']['content'].strip()
+            print(f"🤖 AI extracted query: '{ai_query}'")
+            
+            # Validate AI response
+            if ai_query and ai_query != "UNCLEAR" and len(ai_query) > 2:
+                # Clean up any extra explanation
+                ai_query = ai_query.split('\n')[0].strip()
+                # Remove quotes if present
+                ai_query = ai_query.strip('"\'')
+                
+                # Ensure it contains "logo" if not already
+                if 'logo' not in ai_query.lower():
+                    ai_query = f"{ai_query} logo"
+                
+                print(f"✅ Final AI query: '{ai_query}'")
+                return ai_query
+            else:
+                print(f"⚠️ AI couldn't extract clear query, falling back to regex")
+                return None
+                
+        except Exception as e:
+            print(f"⚠️ AI extraction failed: {e}, falling back to regex")
+            return None
+    
+    def extract_photo_search_query(self, text: str, conversation_history: Optional[List[Dict]] = None) -> Optional[str]:
+        """
+        Extract the subject/query for photo search from user message
+        Uses Mistral AI first for intelligent context analysis, falls back to regex patterns
+        
+        Args:
+            text (str): User message
+            conversation_history (Optional[List[Dict]]): Recent conversation for context
+            
+        Returns:
+            Optional[str]: Extracted search query or None
+        """
+        print(f"🔍 Extracting query from: '{text}'")
+        print(f"📝 History available: {len(conversation_history) if conversation_history else 0} messages")
+        
+        # Try AI-powered extraction first (better context understanding)
+        ai_query = self.extract_photo_search_query_with_ai(text, conversation_history)
+        if ai_query:
+            return ai_query
+        
+        print(f"⚠️ Falling back to regex-based extraction")
+        
         # Patterns to extract the subject - more flexible to handle various phrasings
         patterns = [
             # "search for the BMW logo" -> captures "BMW logo"
@@ -203,29 +333,209 @@ class MistralChatManager:
                     query = f"{query} logo"
                 
                 if query and len(query) > 2:  # Ensure we got something meaningful
-                    return query
+                    # Check if this is a generic descriptor without a brand name
+                    # (e.g., "performance logo", "red logo", etc.)
+                    query_words = query.lower().replace(' logo', '').strip().split()
+                    generic_descriptors = ['performance', 'red', 'black', 'white', 'blue', 'sport', 'racing', 
+                                          'classic', 'vintage', 'new', 'old', 'the', 'a', 'an', 'that', 
+                                          'this', 'my', 'their', 'its']
+                    
+                    # If query only contains generic descriptors, try to get brand from context
+                    if all(word in generic_descriptors for word in query_words):
+                        print(f"⚠️ Generic query detected: '{query}' - checking context for brand")
+                        # Don't return yet, continue to context extraction below
+                        break
+                    else:
+                        print(f"✅ Specific query found: '{query}'")
+                        return query
         
-        # If no specific brand found and user said something generic like "search for it" or "show me"
-        # Try to extract context from conversation history
+        # If no specific brand found, try to use conversation context
         if conversation_history and len(conversation_history) > 0:
             text_lower = text.lower().strip()
-            generic_phrases = ['search for it', 'show me', 'find it', 'look it up', 'get it', 'that one', 'search it']
             
-            if any(phrase in text_lower for phrase in generic_phrases):
-                # Look for brand names or topics in recent conversation
-                for msg in reversed(conversation_history[-3:]):  # Check last 3 messages
-                    content = msg.get('content', '')
-                    # Try to find brand names (capitalized words followed by context words)
-                    context_match = re.search(r'\b([A-Z][\w]+(?:\s+[A-Z][\w]+)?)\b.*(?:logo|brand|company|design)', content, re.IGNORECASE)
+            # Check if this is a refinement of a previous search (e.g., "the red one", "the performance version")
+            refinement_patterns = [
+                r'\b(?:the|a|an)\s+([\w\s]+?)\s+(?:logo|one|version)\b',  # "the red logo", "the performance one"
+                r'\bi\s+want\s+(?:the\s+)?([\w\s]+?)\s+(?:logo|one|version)\b',  # "i want the red logo"
+                r'\bfor\s+(?:the\s+)?([\w\s]+?)(?:\s+logo)?\b',  # "for the performance"
+            ]
+            
+            refinement_query = None
+            for pattern in refinement_patterns:
+                match = re.search(pattern, text_lower)
+                if match:
+                    refinement_query = match.group(1).strip()
+                    break
+            
+            # Look for brand names or topics in recent conversation
+            previous_brand = None
+            for msg in reversed(conversation_history[-5:]):  # Check last 5 messages
+                content = msg.get('content', '')
+                
+                # Try multiple patterns to find brand names
+                brand_patterns = [
+                    r'\b([A-Z][\w]+(?:\s+[A-Z][\w]+)?)\s+logo\b',  # "BMW logo"
+                    r'(?:searching|found|search).*?(?:for|:)\s+([A-Z][\w]+)',  # "Searching for: BMW"
+                    r'(?:photos?|images?|logo).*?(?:of|for)\s+([A-Z][\w]+)',  # "photo of BMW"
+                ]
+                
+                for brand_pattern in brand_patterns:
+                    context_match = re.search(brand_pattern, content)
                     if context_match:
-                        brand_name = context_match.group(1).strip()
-                        return f"{brand_name} logo"
+                        previous_brand = context_match.group(1).strip()
+                        print(f"✅ Found brand in context: '{previous_brand}' from message: '{content[:50]}...'")
+                        break
+                
+                if previous_brand:
+                    break
+            
+            # If we have both a refinement and a previous brand, combine them
+            if refinement_query and previous_brand:
+                print(f"🔗 Combining brand '{previous_brand}' + refinement '{refinement_query}'")
+                # Common refinement terms that should be appended to brand
+                refinement_terms = {
+                    'red': 'red',
+                    'performance': 'M Performance',  # BMW M Performance
+                    'sport': 'sport',
+                    'racing': 'racing',
+                    'motorsport': 'motorsport',
+                    'm': 'M',
+                    'black': 'black',
+                    'white': 'white',
+                    'classic': 'classic',
+                    'vintage': 'vintage',
+                    'new': 'new',
+                    'old': 'old'
+                }
+                
+                # Check if refinement is a color/variant
+                for key, value in refinement_terms.items():
+                    if key in refinement_query.lower():
+                        return f"{previous_brand} {value} logo"
+                
+                # General refinement
+                return f"{previous_brand} {refinement_query} logo"
+            
+            # If we just have a previous brand and generic phrases
+            if previous_brand:
+                generic_phrases = ['search for it', 'show me', 'find it', 'look it up', 'get it', 'that one', 'search it']
+                if any(phrase in text_lower for phrase in generic_phrases):
+                    return f"{previous_brand} logo"
         
         return None
     
+    def classify_user_intent_with_ai(self, text: str, conversation_history: Optional[List[Dict]] = None) -> Dict:
+        """
+        Use Mistral AI to classify user intent with better context understanding.
+        
+        Args:
+            text (str): User message
+            conversation_history (Optional[List[Dict]]): Recent conversation for context
+            
+        Returns:
+            Dict: Intent classification result or None if AI fails
+        """
+        print(f"🤖 Using AI to classify intent for: '{text[:50]}...'")
+        
+        try:
+            # Build context from conversation history
+            context_messages = []
+            if conversation_history:
+                for msg in conversation_history[-5:]:
+                    role = msg.get('role', 'user')
+                    content = msg.get('content', '')
+                    if content:
+                        context_messages.append(f"{role.upper()}: {content}")
+            
+            context_str = "\n".join(context_messages) if context_messages else "No previous context"
+            
+            # Create AI prompt for intent classification
+            intent_prompt = f"""You are analyzing user intent in a logo design and search application.
+
+CONVERSATION HISTORY:
+{context_str}
+
+CURRENT USER MESSAGE:
+{text}
+
+TASK:
+Classify the user's intent into ONE of these categories:
+
+1. "search" - User wants to FIND/SEARCH for an existing logo/brand image
+   Examples: "show me the BMW logo", "search for Nike logo", "find the Apple logo"
+
+2. "generate" - User wants to CREATE/GENERATE a new logo
+   Examples: "create a logo for my startup", "design a logo", "make a minimalist logo"
+
+3. "confirmation" - User is confirming/accepting a previous suggestion
+   Examples: "yes", "looks good", "perfect", "use it", "that's correct"
+
+4. "refinement" - User is refining/rejecting a previous result
+   Examples: "no", "different", "change the color", "make it more modern"
+
+5. "conversation" - General conversation or questions
+   Examples: "hello", "how are you", "what can you do", "help"
+
+RULES:
+- If the conversation shows a pending search/generation and user responds with refinement, classify as "refinement"
+- If user mentions specific brand names to find/search, it's "search"
+- If user wants to create something new, it's "generate"
+- Consider the conversation context heavily
+
+Respond ONLY with this JSON format:
+{{"intent": "search|generate|confirmation|refinement|conversation", "confidence": 0.0-1.0, "reasoning": "brief explanation"}}"""
+
+            headers = {
+                'Authorization': f'Bearer {self.api_key}',
+                'Content-Type': 'application/json'
+            }
+            
+            payload = {
+                'model': self.model,
+                'messages': [
+                    {'role': 'user', 'content': intent_prompt}
+                ],
+                'temperature': 0.2,
+                'max_tokens': 100
+            }
+            
+            response = requests.post(
+                self.endpoint,
+                headers=headers,
+                json=payload,
+                timeout=10
+            )
+            
+            response.raise_for_status()
+            data = response.json()
+            
+            ai_response = data['choices'][0]['message']['content'].strip()
+            print(f"🤖 AI intent response: {ai_response}")
+            
+            # Parse JSON response
+            # Clean up markdown code blocks if present
+            ai_response = ai_response.replace('```json', '').replace('```', '').strip()
+            
+            result = json.loads(ai_response)
+            
+            if result.get('intent') and result.get('confidence'):
+                print(f"✅ AI classified as: {result['intent']} (confidence: {result['confidence']})")
+                return {
+                    'intent': result['intent'],
+                    'confidence': float(result['confidence']),
+                    'context': {'reasoning': result.get('reasoning', ''), 'ai_powered': True}
+                }
+            else:
+                print(f"⚠️ Invalid AI response format, falling back")
+                return None
+                
+        except Exception as e:
+            print(f"⚠️ AI intent classification failed: {e}, falling back to regex")
+            return None
+    
     def classify_user_intent(self, text: str, conversation_history: Optional[List[Dict]] = None) -> Dict:
         """
-        Classify user intent with high accuracy using multiple signals
+        Classify user intent with high accuracy using AI first, then multiple signals as fallback
         
         Args:
             text (str): User message
@@ -238,6 +548,13 @@ class MistralChatManager:
                 'context': Dict with additional context
             }
         """
+        # Try AI-powered classification first
+        ai_result = self.classify_user_intent_with_ai(text, conversation_history)
+        if ai_result:
+            return ai_result
+        
+        print(f"⚠️ Falling back to regex-based intent classification")
+        
         text_lower = text.lower().strip()
         
         # Check for simple confirmations/rejections first
@@ -437,14 +754,54 @@ class MistralChatManager:
             
             # Refinement/rejection keywords
             elif any(keyword in user_msg_lower for keyword in ['no', 'refine', 'different', 'change', 'search again', '❌', 'revise']):
+                # Get the original pending request data
+                original_logo_data = self.pending_logo_requests.get(user_id, {})
+                
                 # Clear the pending request
                 self.pending_logo_requests.pop(user_id)
                 
                 # Check if user provided specific changes or new request
                 if len(user_message.split()) > 2:  # More than just "no" or "search again"
+                    # Remove the rejection word to get the actual refinement
+                    refinement_text = user_message
+                    for keyword in ['no', 'nope', 'not', 'different']:
+                        refinement_text = re.sub(rf'\b{keyword}\b', '', refinement_text, flags=re.IGNORECASE)
+                    refinement_text = refinement_text.strip()
+                    
+                    # Check if this is a search request or a refinement
+                    is_search_request = self.is_photo_search_request(refinement_text, conversation_history)
+                    
+                    # Check for logo refinement keywords that indicate generation, not search
+                    logo_refinement_keywords = [
+                        'without', 'with', 'add', 'remove', 'change', 'make it',
+                        'style', 'color', 'shape', 'design', 'simpler', 'modern',
+                        'minimalist', 'bold', 'clean', 'professional', 'playful',
+                        'name', 'text', 'icon', 'symbol', 'background'
+                    ]
+                    has_refinement_keyword = any(keyword in refinement_text.lower() for keyword in logo_refinement_keywords)
+                    
+                    # If it has refinement keywords, it's definitely a logo refinement, not search
+                    if has_refinement_keyword:
+                        is_search_request = False
+                        print(f"🎨 Detected logo refinement (has refinement keywords)")
+                    
+                    # If it's clearly a search (e.g., "no, search for Nike logo"), don't process as logo
+                    if is_search_request and use_web_search and not has_refinement_keyword:
+                        print(f"🔍 User wants to search instead: {refinement_text}")
+                        # Let it fall through to normal search handling
+                        # Clear the pending and return None to trigger search flow
+                        return (None, False, None, None)
+                    
+                    # Otherwise, treat as logo generation refinement
+                    # Combine original request context with refinement
+                    original_request = original_logo_data.get('request_data', {}).get('raw_request', '')
+                    combined_request = f"{original_request}. Refinement: {refinement_text}" if original_request else refinement_text
+                    
+                    print(f"🎨 Processing refinement: {refinement_text}")
+                    
                     # User provided specific refinement, re-process with new request
                     try:
-                        logo_result = self.logo_agent.process_logo_request(user_message)
+                        logo_result = self.logo_agent.process_logo_request(combined_request)
                         if logo_result.get('success'):
                             preview_text = self.logo_agent.format_preview_for_user(logo_result)
                             
