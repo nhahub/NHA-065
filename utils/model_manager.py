@@ -171,12 +171,17 @@ class ModelManager:
         """
         Generate an image from a text prompt, optionally with a reference image using FLUX Redux
         
+        FLUX Redux combines both text prompt and reference image:
+        - The text prompt describes what you want to create
+        - The reference image guides the style, composition, and visual characteristics
+        - ip_adapter_scale controls how much influence the reference has (0.0=text only, 1.0=strong reference)
+        
         Args:
             prompt (str): Text description of the logo to generate
             use_lora (bool): Whether to use LoRA weights
             lora_filename (str): Specific LoRA file to use (if use_lora=True)
             reference_image (PIL.Image or str): Reference image for FLUX Redux
-            ip_adapter_scale (float): Strength of Redux influence (0.0-1.0) - kept for API compatibility
+            ip_adapter_scale (float): Strength of Redux influence (0.0-1.0, default 0.5)
             **kwargs: Additional generation parameters
             
         Returns:
@@ -214,7 +219,9 @@ class ModelManager:
             if self.redux_loaded:
                 try:
                     print("Processing reference image with FLUX Redux...")
+                    print(f"Redux influence scale: {ip_adapter_scale}")
                     with torch.inference_mode():
+                        # FLUX Redux processes the reference image into embeddings
                         redux_output = self.redux_pipeline(reference_image)
                     print("✓ Reference image processed")
                 except Exception as e:
@@ -248,6 +255,7 @@ class ModelManager:
             print(f"Prompt: {prompt}")
             
             # Prepare generation arguments
+            # ALWAYS include the text prompt - it describes what to create
             gen_args = {
                 "prompt": prompt,
                 **gen_params
@@ -256,10 +264,29 @@ class ModelManager:
             # Add Redux outputs if reference image was processed
             if redux_output is not None:
                 # FLUX Redux provides image embeddings that guide the generation
-                gen_args.update(redux_output)
+                # We use BOTH the text prompt (what to create) and embeddings (style/reference)
+                # The pooled_image_embeds from Redux provide visual guidance
+                if hasattr(redux_output, 'to_tuple'):
+                    redux_dict = redux_output.to_tuple()[0]
+                else:
+                    redux_dict = redux_output
+                
+                # Add only the pooled embeddings for visual guidance
+                # Don't add prompt_embeds to avoid conflict with text prompt
+                if 'pooled_image_embeds' in redux_dict:
+                    gen_args["pooled_projections"] = redux_dict["pooled_image_embeds"]
+                    print(f"✓ Using Redux visual guidance with text prompt (influence: {ip_adapter_scale})")
+                elif 'image_embeds' in redux_dict:
+                    gen_args["pooled_projections"] = redux_dict["image_embeds"]
+                    print(f"✓ Using Redux visual guidance with text prompt (influence: {ip_adapter_scale})")
+                else:
+                    print("⚠️ Redux output format unexpected, using text prompt only")
+                
                 # Adjust guidance scale based on redux influence
                 # Higher ip_adapter_scale means more influence from reference image
-                gen_args["guidance_scale"] = ip_adapter_scale * 3.5  # Scale between 0 and 3.5
+                base_guidance = gen_params.get("guidance_scale", 3.5)
+                gen_args["guidance_scale"] = base_guidance * (1.0 + ip_adapter_scale)
+                print(f"Adjusted guidance_scale: {gen_args['guidance_scale']:.2f} (base: {base_guidance}, scale: {ip_adapter_scale})")
             
             # Note: For Flux models, LoRA scale is set during loading, not during generation
             
