@@ -44,6 +44,10 @@ def chat_with_ai():
 
     # Check for photo search if web search is enabled
     if use_web_search:
+        # Classify user intent first for better handling
+        intent_data = mistral_chat.classify_user_intent(user_message, data.get('conversation_history', []))
+        print(f"💭 Intent: {intent_data['intent']} (confidence: {intent_data['confidence']:.2f})")
+        
         # Check if there's a pending photo request (confirmation/refinement)
         if uid in mistral_chat.pending_photo_requests:
             user_msg_lower = user_message.lower().strip()
@@ -61,7 +65,7 @@ def chat_with_ai():
                 if results and selected_index < len(results):
                     selected_photo = results[selected_index]
                     
-                    # Download and store the image as reference for IP-Adapter
+                    # Download and store the image as reference for FLUX Redux
                     try:
                         image_url = selected_photo.get('image_url')
                         hostname = selected_photo.get('hostname', 'web')

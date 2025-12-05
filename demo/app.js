@@ -7,8 +7,8 @@ let currentSettings = {
     num_steps: 4,
     width: 1024,
     height: 1024,
-    use_ip_adapter: false,
-    ip_adapter_scale: 0.5,
+    use_ip_adapter: false,  // Kept for backward compatibility, now uses FLUX Redux
+    ip_adapter_scale: 0.5,  // Redux influence strength
     reference_image: null
 };
 
@@ -278,7 +278,7 @@ function updateIpAdapterScale(value) {
     currentSettings.ip_adapter_scale = value / 100;
 }
 
-// Toggle IP Adapter
+// Toggle FLUX Redux (image conditioning)
 function toggleIpAdapter(checked) {
     currentSettings.use_ip_adapter = checked;
     const content = document.getElementById('referenceContent');

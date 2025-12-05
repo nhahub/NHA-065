@@ -31,61 +31,132 @@ class MistralChatManager:
             print("⚠️  WARNING: MISTRAL_API_KEY not set in .env file")
             print("   Get your API key from: https://console.mistral.ai/api-keys/")
     
-    def is_image_generation_request(self, text: str) -> bool:
+    def is_image_generation_request(self, text: str, conversation_history: Optional[List[Dict]] = None) -> bool:
         """
-        Detect if the user message is requesting image/logo generation
+        Detect if the user message is requesting image/logo generation with context awareness
         
         Args:
             text (str): User message
+            conversation_history (Optional[List[Dict]]): Recent conversation for context
             
         Returns:
             bool: True if requesting image generation
         """
-        # Keywords that indicate image generation intent
-        generation_keywords = [
-            r'\b(create|generate|make|design|build|draw|produce)\b',
-            r'\b(logo|image|picture|photo|graphic|illustration|icon|banner)\b'
-        ]
-        
         text_lower = text.lower()
         
-        # Check if message contains both action and target keywords
-        has_action = bool(re.search(generation_keywords[0], text_lower))
-        has_target = bool(re.search(generation_keywords[1], text_lower))
+        # Strong generation indicators - these clearly mean "create new"
+        strong_generation_patterns = [
+            r'\b(create|generate|make|design|build|produce|craft)\s+(?:a|an|my|our)?\s*(?:logo|image|design|graphic)\b',
+            r'\b(design|create)\s+(?:me|us)?\s*(?:a|an)?\s*(?:new)?\s*logo\b',
+            r'\blogo\s+for\s+(?:my|our|a|an)\s+\w+',  # "logo for my business"
+            r'\b(?:I|we)\s+(?:want|need)\s+(?:a|an)?\s*(?:new)?\s*logo\b',
+            r'\bcan\s+you\s+(create|make|design|generate)\b',
+        ]
         
-        return has_action and has_target
+        for pattern in strong_generation_patterns:
+            if re.search(pattern, text_lower):
+                return True
+        
+        # Check for generation keywords with context
+        generation_action_words = ['create', 'generate', 'make', 'design', 'build', 'draw', 'produce', 'craft']
+        target_words = ['logo', 'image', 'graphic', 'illustration', 'icon', 'banner', 'design']
+        
+        has_action = any(word in text_lower for word in generation_action_words)
+        has_target = any(word in text_lower for word in target_words)
+        
+        # If both present, it's likely a generation request
+        if has_action and has_target:
+            # But check for negation patterns (e.g., "don't create", "not making")
+            negation_patterns = [r'\b(don\'t|do not|not|never)\s+\w+\s+(create|make|design|generate)\b']
+            for pattern in negation_patterns:
+                if re.search(pattern, text_lower):
+                    return False
+            return True
+        
+        # Check context from conversation history for implicit requests
+        if conversation_history and len(conversation_history) > 0:
+            # Look at last few messages for context
+            recent_messages = conversation_history[-3:] if len(conversation_history) >= 3 else conversation_history
+            
+            # If user previously mentioned wanting to create something
+            context_str = " ".join([msg.get('content', '') for msg in recent_messages]).lower()
+            
+            # Implicit continuation patterns (e.g., "yes do it", "go ahead", "that sounds good")
+            implicit_patterns = [
+                r'\b(yes|yeah|yep|sure|okay|ok|please|go ahead|sounds good|let\'s do it)\b',
+                r'\b(that\'s perfect|looks good|i like|proceed)\b'
+            ]
+            
+            # Check if recent context was about logo creation
+            if any(word in context_str for word in ['create', 'design', 'logo', 'generate']):
+                for pattern in implicit_patterns:
+                    if re.search(pattern, text_lower) and len(text.split()) <= 5:
+                        return True
+        
+        return False
     
-    def is_photo_search_request(self, text: str) -> bool:
+    def is_photo_search_request(self, text: str, conversation_history: Optional[List[Dict]] = None) -> bool:
         """
-        Detect if the user message is requesting to search for a specific photo/logo
+        Detect if the user message is requesting to search for a specific photo/logo with context awareness
         
         Args:
             text (str): User message
+            conversation_history (Optional[List[Dict]]): Recent conversation for context
             
         Returns:
             bool: True if requesting photo search
         """
         text_lower = text.lower()
         
-        # Enhanced patterns that catch more natural language variations
-        specific_patterns = [
+        # Strong search indicators - these clearly mean "find existing"
+        strong_search_patterns = [
             # Direct search commands
-            r'\b(search|find|get|fetch|show|display|look up|lookup)\s+(?:for\s+)?(?:a\s+)?(?:an\s+)?(?:the\s+)?(?:photo|image|logo|picture|pic)\s+(?:of\s+|for\s+)',
-            # "show me X logo" patterns
-            r'\b(show|find|get|fetch)\s+(?:me\s+)?(?:the\s+)?\w+\s+(?:logo|image|photo)',
-            # "X logo" at start or after search words
-            r'\b(search|find|get|lookup|look up)\s+\w+\s+logo',
-            # Photo/image/logo + of/for pattern
-            r'\b(?:photo|image|logo|picture)\s+(?:of|for)\s+\w+',
-            # Brand name + logo (e.g., "Nike logo")
-            r'\b[A-Z]\w+\s+logo\b',
-            # "the X logo"
-            r'\bthe\s+\w+\s+logo\b',
+            r'\b(search|find|get|fetch|show|display|look\s*up|lookup)\s+(?:for\s+)?(?:a\s+)?(?:an\s+)?(?:the\s+)?(?:photo|image|logo|picture|pic)\s+(?:of|for)\s+',
+            # "show me [brand] logo"
+            r'\b(show|find|get|fetch)\s+(?:me\s+)?(?:the\s+)?[A-Z]\w+\s+(?:logo|image)',
+            # Direct "X logo" requests (capitalized brand name)
+            r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+logo\b',
+            # "what does X logo look like"
+            r'\bwhat\s+(?:does|is)\s+\w+(?:\s+\w+)*?\s+logo\s+look\s+like\b',
+            # Searching with "for" - "search for nike logo"
+            r'\b(search|find|lookup)\s+(?:for\s+)?\w+\s+logo\b',
         ]
         
-        for pattern in specific_patterns:
+        for pattern in strong_search_patterns:
             if re.search(pattern, text_lower, re.IGNORECASE):
-                return True
+                # Additional check: make sure it's not about creating
+                if not re.search(r'\b(create|generate|make|design|similar|like)\b', text_lower):
+                    return True
+        
+        # Contextual search patterns - need conversation history
+        if conversation_history:
+            recent_context = " ".join([msg.get('content', '') for msg in conversation_history[-3:]]).lower()
+            
+            # Follow-up search requests (e.g., "show me that", "search for it", "find it")
+            implicit_search = [
+                r'\b(show|search|find)\s+(me\s+)?(that|it|them)\b',
+                r'\b(what about|how about)\s+\w+\s*\'?s?\s+logo\b',
+                r'\blet\s+me\s+see\s+(that|it|the\s+\w+\s+logo)\b',
+            ]
+            
+            for pattern in implicit_search:
+                if re.search(pattern, text_lower):
+                    # Check if recent context was about searching/viewing logos
+                    if any(word in recent_context for word in ['search', 'find', 'show', 'logo', 'brand', 'reference']):
+                        return True
+        
+        # Check for "the X logo" pattern (lowercase - referring to existing brand)
+        # But exclude if followed by generation words
+        the_logo_match = re.search(r'\bthe\s+(\w+)\s+logo\b', text_lower)
+        if the_logo_match:
+            brand = the_logo_match.group(1)
+            # Check if brand looks like a real company (not generic words)
+            generic_words = ['new', 'old', 'first', 'last', 'main', 'best', 'perfect', 'right']
+            if brand not in generic_words:
+                # Make sure no generation words follow
+                following_text = text_lower[the_logo_match.end():]
+                if not re.search(r'\b(create|generate|make|design)\b', following_text):
+                    return True
         
         return False
     
@@ -152,6 +223,127 @@ class MistralChatManager:
         
         return None
     
+    def classify_user_intent(self, text: str, conversation_history: Optional[List[Dict]] = None) -> Dict:
+        """
+        Classify user intent with high accuracy using multiple signals
+        
+        Args:
+            text (str): User message
+            conversation_history (Optional[List[Dict]]): Recent conversation for context
+            
+        Returns:
+            Dict: {
+                'intent': 'generate' | 'search' | 'conversation' | 'confirmation',
+                'confidence': float (0.0-1.0),
+                'context': Dict with additional context
+            }
+        """
+        text_lower = text.lower().strip()
+        
+        # Check for simple confirmations/rejections first
+        confirmation_words = ['yes', 'yeah', 'yep', 'sure', 'ok', 'okay', 'confirm', 'go ahead', 'proceed', 'perfect', '✅']
+        rejection_words = ['no', 'nope', 'cancel', 'stop', 'different', 'again', '❌']
+        
+        # Very short messages are likely confirmations/rejections in context
+        if len(text.split()) <= 3:
+            if any(word in text_lower for word in confirmation_words):
+                return {
+                    'intent': 'confirmation',
+                    'confidence': 0.9,
+                    'context': {'type': 'positive'}
+                }
+            elif any(word in text_lower for word in rejection_words):
+                return {
+                    'intent': 'confirmation',
+                    'confidence': 0.9,
+                    'context': {'type': 'negative'}
+                }
+        
+        # Check for explicit search intent (highest priority for existing logos)
+        search_confidence = 0.0
+        search_indicators = {
+            r'\bsearch\s+(?:for\s+)?': 0.9,
+            r'\bfind\s+(?:the\s+)?\w+\s+logo\b': 0.85,
+            r'\bshow\s+me\s+(?:the\s+)?\w+\s+logo\b': 0.85,
+            r'\bwhat\s+(?:does|is)\s+\w+\s+logo\s+look\s*like\b': 0.8,
+            r'\b(get|fetch|display)\s+(?:the\s+)?logo\s+(?:of|for)\b': 0.8,
+            r'\b[A-Z][a-z]+\s+logo\b': 0.7,  # "Nike logo", "Apple logo"
+            r'\bthe\s+\w+\s+logo\b': 0.6,
+        }
+        
+        for pattern, confidence in search_indicators.items():
+            if re.search(pattern, text_lower, re.IGNORECASE):
+                search_confidence = max(search_confidence, confidence)
+        
+        # Check for explicit generation intent
+        generation_confidence = 0.0
+        generation_indicators = {
+            r'\b(create|generate|make)\s+(?:a|an|my)?\s*(?:new\s+)?logo\b': 0.95,
+            r'\bdesign\s+(?:a|an|my)?\s*logo\s+for\b': 0.9,
+            r'\blogo\s+for\s+(?:my|our)\s+\w+\b': 0.85,
+            r'\b(create|make|design)\s+something\s+(like|similar|inspired)\b': 0.8,
+            r'\bI\s+(?:want|need)\s+(?:a|an)\s+logo\b': 0.85,
+        }
+        
+        for pattern, confidence in generation_indicators.items():
+            if re.search(pattern, text_lower):
+                generation_confidence = max(generation_confidence, confidence)
+        
+        # Contextual analysis from conversation history
+        context_search_boost = 0.0
+        context_generation_boost = 0.0
+        
+        if conversation_history and len(conversation_history) > 0:
+            recent_messages = conversation_history[-3:]
+            context_text = " ".join([msg.get('content', '') for msg in recent_messages]).lower()
+            
+            # Check what the conversation was about
+            if any(word in context_text for word in ['search', 'find', 'show', 'reference', 'existing']):
+                context_search_boost = 0.2
+            
+            if any(word in context_text for word in ['create', 'design', 'generate', 'my logo', 'our logo']):
+                context_generation_boost = 0.2
+        
+        # Apply context boosts
+        search_confidence += context_search_boost
+        generation_confidence += context_generation_boost
+        
+        # Disambiguate: "search" keywords in generation context
+        # Example: "search for inspiration then create a logo"
+        if generation_confidence > 0.5 and search_confidence > 0.5:
+            # Check for temporal indicators
+            if re.search(r'\b(then|after|once|when)\b', text_lower):
+                # Multiple intents - prioritize based on order
+                search_first = text_lower.find('search') < text_lower.find('create') if 'create' in text_lower else True
+                if search_first:
+                    search_confidence += 0.2
+                else:
+                    generation_confidence += 0.2
+        
+        # Determine intent based on confidence scores
+        max_confidence = max(search_confidence, generation_confidence)
+        
+        if max_confidence >= 0.6:
+            if search_confidence > generation_confidence:
+                return {
+                    'intent': 'search',
+                    'confidence': min(search_confidence, 1.0),
+                    'context': {'query_extraction_needed': True}
+                }
+            else:
+                return {
+                    'intent': 'generate',
+                    'confidence': min(generation_confidence, 1.0),
+                    'context': {'prompt_extraction_needed': True}
+                }
+        
+        # Low confidence - likely just conversation
+        return {
+            'intent': 'conversation',
+            'confidence': 0.5,
+            'context': {'needs_clarification': max_confidence > 0.3}
+        }
+    
     def extract_image_prompt(self, response_text: str) -> Optional[str]:
         """
         Extract image generation prompt from Mistral response if it contains JSON action
@@ -208,7 +400,7 @@ class MistralChatManager:
     
     def chat(self, user_message: str, conversation_history: Optional[List[Dict]] = None, user_id: Optional[str] = None, use_web_search: bool = False) -> Tuple[str, bool, Optional[str], Optional[Dict]]:
         """
-        Send a message to Mistral AI and get response
+        Send a message to Mistral AI and get response with enhanced context awareness
         
         Args:
             user_message (str): User's message
@@ -221,6 +413,13 @@ class MistralChatManager:
         """
         if not self.api_key or self.api_key == 'your_mistral_api_key_here':
             return ("⚠️ Mistral API key not configured. Please add MISTRAL_API_KEY to your .env file. Get your key from: https://console.mistral.ai/api-keys/", False, None, None)
+        
+        # === STEP 1: Classify user intent BEFORE processing ===
+        intent_data = self.classify_user_intent(user_message, conversation_history)
+        user_intent = intent_data['intent']
+        intent_confidence = intent_data['confidence']
+        
+        print(f"🎯 Detected intent: {user_intent} (confidence: {intent_confidence:.2f})")
         
         # Check if user is confirming a pending logo request
         if user_id and user_id in self.pending_logo_requests:
@@ -345,10 +544,49 @@ class MistralChatManager:
                     except Exception as e:
                         print(f"Error performing web search: {e}")
                         # Continue with normal response
+        
+            # === STEP 2: Handle based on detected intent ===
             
-            # Check if this is a logo generation request
+            # HIGH-CONFIDENCE SEARCH INTENT - Direct search without asking Mistral
+            if user_intent == 'search' and intent_confidence >= 0.75 and use_web_search:
+                search_query = self.extract_photo_search_query(user_message, conversation_history)
+                if search_query:
+                    print(f"🔍 Direct search triggered: {search_query}")
+                    try:
+                        photo_result = self.logo_agent.search_for_photo(search_query)
+                        
+                        if photo_result.get('success'):
+                            preview_text = self.logo_agent.format_photo_preview(photo_result)
+                            if user_id:
+                                self.pending_photo_requests[user_id] = photo_result
+                            
+                            return (preview_text, False, None, {'_web_search_result': True, 'photo_result': photo_result})
+                    except Exception as e:
+                        print(f"Error in direct search: {e}")
+                        # Continue with normal response
+            
+            # HIGH-CONFIDENCE GENERATION INTENT - Skip search, go straight to generation prep
+            if user_intent == 'generate' and intent_confidence >= 0.8:
+                print(f"🎨 High-confidence generation detected")
+                # If web search is enabled, use Logo Reference Agent
+                if use_web_search:
+                    try:
+                        logo_result = self.logo_agent.process_logo_request(user_message)
+                        
+                        if logo_result.get('success'):
+                            preview_text = self.logo_agent.format_preview_for_user(logo_result)
+                            
+                            if user_id:
+                                self.pending_logo_requests[user_id] = logo_result
+                            
+                            return (preview_text, False, None, logo_result)
+                    except Exception as e:
+                        print(f"Error in logo agent processing: {e}")
+                        # Continue with normal Mistral processing
+            
+            # === STEP 3: Check if this is a logo generation request (fallback for lower confidence) ===
             # Only use Logo Reference Agent when web search is ENABLED
-            if self.is_image_generation_request(user_message) and use_web_search:
+            if self.is_image_generation_request(user_message, conversation_history) and use_web_search and user_intent != 'search':
                 try:
                     # Use Logo Reference Agent to gather references and create optimized prompt
                     logo_result = self.logo_agent.process_logo_request(user_message)

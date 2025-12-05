@@ -134,9 +134,10 @@ def generate_from_chat():
             metadata['lora'] = gen_params.get('lora_filename')
             metadata['model'] = f"{config.BASE_MODEL_ID} + LoRA"
         
-        # Add IP-Adapter info if used
+        # Add FLUX Redux info if used
         if gen_params.get('use_ip_adapter'):
-            metadata['ip_adapter_scale'] = gen_params.get('ip_adapter_scale', 0.5)
+            metadata['redux_scale'] = gen_params.get('ip_adapter_scale', 0.5)
+            metadata['image_conditioning'] = 'FLUX Redux'
         
         return jsonify({
             'success': True,

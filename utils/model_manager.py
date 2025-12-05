@@ -1,9 +1,9 @@
 """
 Model Manager for Zypher AI Logo Generator
-Handles loading and managing Flux Schnell model with optional LoRA and IP-Adapter
+Handles loading and managing Flux Schnell model with optional LoRA and FLUX Redux
 """
 import torch
-from diffusers import FluxPipeline
+from diffusers import FluxPipeline, FluxPriorReduxPipeline
 from PIL import Image
 import os
 from dotenv import load_dotenv
@@ -13,15 +13,16 @@ import config
 load_dotenv()
 
 class ModelManager:
-    """Manages the Flux Schnell model, LoRA weights, and IP-Adapter"""
+    """Manages the Flux Schnell model, LoRA weights, and FLUX Redux"""
     
     def __init__(self):
         self.pipeline = None
+        self.redux_pipeline = None
         self.device = config.GPU_DEVICE if config.USE_GPU and torch.cuda.is_available() else "cpu"
         self.lora_loaded = False
         self.current_lora = None  # Track which LoRA is currently loaded
         self.base_model_loaded = False
-        self.ip_adapter_loaded = False
+        self.redux_loaded = False
         self.hf_token = os.getenv("HUGGINGFACE_TOKEN")
     
     def get_available_loras(self):
@@ -139,43 +140,43 @@ class ModelManager:
             except Exception as e:
                 print(f"Error unloading LoRA: {e}")
     
-    def load_ip_adapter(self):
-        """Load IP-Adapter for image-to-image conditioning"""
+    def load_redux(self):
+        """Load FLUX Redux for image-to-image conditioning"""
         if not self.base_model_loaded:
             self.load_base_model()
         
-        if self.ip_adapter_loaded:
-            print("IP-Adapter already loaded")
+        if self.redux_loaded:
+            print("FLUX Redux already loaded")
             return
         
         try:
-            print("Loading IP-Adapter...")
-            # Note: IP-Adapter is designed for SD 1.5, not fully compatible with Flux
-            # Load IP-Adapter weights with authentication token
-            self.pipeline.load_ip_adapter(
-                "h94/IP-Adapter", 
-                subfolder="sdxl_models",
-                weight_name="ip-adapter_sdxl.bin",
+            print("Loading FLUX Redux adapter...")
+            # Load FLUX Redux - the official image conditioning adapter for FLUX models
+            self.redux_pipeline = FluxPriorReduxPipeline.from_pretrained(
+                "black-forest-labs/FLUX.1-Redux-dev",
+                torch_dtype=torch.bfloat16 if self.device != "cpu" else torch.float32,
                 token=self.hf_token if self.hf_token and self.hf_token != "your_huggingface_token_here" else None
             )
-            self.ip_adapter_loaded = True
-            print("✓ IP-Adapter loaded successfully")
+            self.redux_pipeline.to(self.device)
+            
+            self.redux_loaded = True
+            print("✓ FLUX Redux loaded successfully")
         except Exception as e:
-            print(f"Note: IP-Adapter not available for Flux models: {e}")
-            print("IP-Adapter is currently only supported for Stable Diffusion models.")
-            print("Continuing without IP-Adapter support...")
-            self.ip_adapter_loaded = False
+            print(f"Error loading FLUX Redux: {e}")
+            print("Continuing without Redux support...")
+            self.redux_loaded = False
+            raise
     
     def generate_image(self, prompt, use_lora=False, lora_filename=None, reference_image=None, ip_adapter_scale=0.5, **kwargs):
         """
-        Generate an image from a text prompt, optionally with a reference image
+        Generate an image from a text prompt, optionally with a reference image using FLUX Redux
         
         Args:
             prompt (str): Text description of the logo to generate
             use_lora (bool): Whether to use LoRA weights
             lora_filename (str): Specific LoRA file to use (if use_lora=True)
-            reference_image (PIL.Image or str): Reference image for IP-Adapter
-            ip_adapter_scale (float): Strength of IP-Adapter influence (0.0-1.0)
+            reference_image (PIL.Image or str): Reference image for FLUX Redux
+            ip_adapter_scale (float): Strength of Redux influence (0.0-1.0) - kept for API compatibility
             **kwargs: Additional generation parameters
             
         Returns:
@@ -191,23 +192,34 @@ class ModelManager:
         elif not self.base_model_loaded:
             self.load_base_model()
         
-        # Load IP-Adapter if reference image provided and not loaded
-        # Note: IP-Adapter is not fully compatible with Flux models yet
-        # We'll skip IP-Adapter for Flux and just use the reference as visual guidance
-        if reference_image is not None:
-            print("Note: Reference image provided but IP-Adapter is not compatible with Flux models.")
-            print("Image will be generated using the text prompt only.")
-            # Don't attempt to load IP-Adapter for Flux
-            # if not self.ip_adapter_loaded:
-            #     self.load_ip_adapter()
+        # Load FLUX Redux if reference image provided and not loaded
+        if reference_image is not None and not self.redux_loaded:
+            try:
+                self.load_redux()
+            except Exception as e:
+                print(f"Warning: Could not load FLUX Redux: {e}")
+                print("Continuing with text-only generation...")
+                reference_image = None
         
         # Process reference image if provided
+        redux_output = None
         if reference_image is not None:
             if isinstance(reference_image, str):
                 # Load from path
                 reference_image = Image.open(reference_image).convert("RGB")
             elif not isinstance(reference_image, Image.Image):
                 raise ValueError("reference_image must be a PIL Image or file path")
+            
+            # Generate Redux embeddings from reference image
+            if self.redux_loaded:
+                try:
+                    print("Processing reference image with FLUX Redux...")
+                    with torch.inference_mode():
+                        redux_output = self.redux_pipeline(reference_image)
+                    print("✓ Reference image processed")
+                except Exception as e:
+                    print(f"Warning: Error processing reference image: {e}")
+                    redux_output = None
         
         # Merge default params with custom ones
         gen_params = config.DEFAULT_GENERATION_PARAMS.copy()
@@ -228,8 +240,8 @@ class ModelManager:
             mode = []
             if use_lora:
                 mode.append("LoRA")
-            if reference_image is not None:
-                mode.append(f"IP-Adapter (scale: {ip_adapter_scale})")
+            if redux_output is not None:
+                mode.append(f"FLUX Redux (scale: {ip_adapter_scale})")
             mode_str = " + ".join(mode) if mode else "base model"
             
             print(f"Generating image with {mode_str}...")
@@ -241,15 +253,15 @@ class ModelManager:
                 **gen_params
             }
             
-            # Add IP-Adapter arguments if reference image provided
-            if reference_image is not None and self.ip_adapter_loaded:
-                gen_args["ip_adapter_image"] = reference_image
-                gen_args["ip_adapter_image_embeds"] = None
-                # Set IP-Adapter scale
-                self.pipeline.set_ip_adapter_scale(ip_adapter_scale)
+            # Add Redux outputs if reference image was processed
+            if redux_output is not None:
+                # FLUX Redux provides image embeddings that guide the generation
+                gen_args.update(redux_output)
+                # Adjust guidance scale based on redux influence
+                # Higher ip_adapter_scale means more influence from reference image
+                gen_args["guidance_scale"] = ip_adapter_scale * 3.5  # Scale between 0 and 3.5
             
             # Note: For Flux models, LoRA scale is set during loading, not during generation
-            # No need to pass cross_attention_kwargs or joint_attention_kwargs
             
             # Generate image
             with torch.inference_mode():
@@ -270,7 +282,8 @@ class ModelManager:
             "lora_loaded": self.lora_loaded,
             "current_lora": self.current_lora,
             "available_loras": self.get_available_loras(),
-            "ip_adapter_loaded": self.ip_adapter_loaded,
+            "redux_loaded": self.redux_loaded,
+            "ip_adapter_loaded": self.redux_loaded,  # Alias for backward compatibility
             "device": self.device,
             "model_id": config.BASE_MODEL_ID if self.base_model_loaded else None
         }
