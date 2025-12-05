@@ -121,17 +121,29 @@ def generate_from_chat():
         if uid in user_reference_images:
             del user_reference_images[uid]
 
+        # Build metadata with LoRA info if used
+        metadata = {
+            'model': config.BASE_MODEL_ID,
+            'steps': gen_params.get('num_steps', config.DEFAULT_GENERATION_PARAMS['num_inference_steps']),
+            'dimensions': f"{gen_params.get('width', 1024)}x{gen_params.get('height', 1024)}",
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+        # Add LoRA info if used
+        if gen_params.get('use_lora') and gen_params.get('lora_filename'):
+            metadata['lora'] = gen_params.get('lora_filename')
+            metadata['model'] = f"{config.BASE_MODEL_ID} + LoRA"
+        
+        # Add IP-Adapter info if used
+        if gen_params.get('use_ip_adapter'):
+            metadata['ip_adapter_scale'] = gen_params.get('ip_adapter_scale', 0.5)
+        
         return jsonify({
             'success': True,
             'image': f"data:image/{config.IMAGE_FORMAT.lower()};base64,{img_str}",
             'filename': filename,
             'remaining_prompts': None if user.is_pro else (5 - user.prompt_count),
-            'metadata': {
-                'model': config.BASE_MODEL_ID,
-                'steps': gen_params.get('num_steps', config.DEFAULT_GENERATION_PARAMS['num_inference_steps']),
-                'dimensions': f"{gen_params.get('width', 1024)}x{gen_params.get('height', 1024)}",
-                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            },
+            'metadata': metadata,
             'debug': {'old_count': old_count, 'new_count': user.prompt_count}
         })
 

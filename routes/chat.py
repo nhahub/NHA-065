@@ -100,33 +100,41 @@ def chat_with_ai():
                 original_query = mistral_chat.pending_photo_requests[uid].get('query', '')
                 mistral_chat.pending_photo_requests.pop(uid)
                 
-                # Extract new search terms or use original
-                new_query = mistral_chat.extract_photo_search_query(user_message) or f"{original_query} alternative"
+                # Check if user provided a new search query in their message
+                new_query = mistral_chat.extract_photo_search_query(user_message)
                 
-                # Search again
-                try:
-                    photo_result = logo_agent.search_for_photo(new_query)
-                    if photo_result.get('success'):
-                        preview_text = logo_agent.format_photo_preview(photo_result)
-                        mistral_chat.pending_photo_requests[uid] = photo_result
-                        
+                if new_query and new_query.lower() != original_query.lower():
+                    # User provided new search terms, search with those
+                    try:
+                        photo_result = logo_agent.search_for_photo(new_query)
+                        if photo_result.get('success'):
+                            preview_text = logo_agent.format_photo_preview(photo_result)
+                            mistral_chat.pending_photo_requests[uid] = photo_result
+                            
+                            return jsonify({
+                                'success': True,
+                                'response': preview_text,
+                                'is_image_request': False,
+                                'awaiting_photo_confirmation': True,
+                                'photo_result': photo_result
+                            })
+                        else:
+                            return jsonify({
+                                'success': True,
+                                'response': f"❌ {photo_result.get('error', 'Search failed')}",
+                                'is_image_request': False
+                            })
+                    except Exception as e:
                         return jsonify({
                             'success': True,
-                            'response': preview_text,
-                            'is_image_request': False,
-                            'awaiting_photo_confirmation': True,
-                            'photo_result': photo_result
-                        })
-                    else:
-                        return jsonify({
-                            'success': True,
-                            'response': f"❌ {photo_result.get('error', 'Search failed')}",
+                            'response': f"❌ Error searching for photo: {str(e)}",
                             'is_image_request': False
                         })
-                except Exception as e:
+                else:
+                    # User didn't provide new search terms, ask for clarification
                     return jsonify({
                         'success': True,
-                        'response': f"❌ Error searching for photo: {str(e)}",
+                        'response': f"No problem! What would you like me to search for instead? 🔍\n\n*Tip: Be specific with brand names or logo styles you want to reference.*",
                         'is_image_request': False
                     })
         

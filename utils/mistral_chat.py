@@ -220,23 +220,32 @@ class MistralChatManager:
             
             # Refinement/rejection keywords
             elif any(keyword in user_msg_lower for keyword in ['no', 'refine', 'different', 'change', 'search again', '❌', 'revise']):
-                # Keep the original request and search again
-                original_request = self.pending_logo_requests[user_id]['request_data']['raw_request']
+                # Clear the pending request
                 self.pending_logo_requests.pop(user_id)
                 
-                # Re-process with logo agent
-                try:
-                    logo_result = self.logo_agent.process_logo_request(user_message + " " + original_request)
-                    if logo_result.get('success'):
-                        preview_text = self.logo_agent.format_preview_for_user(logo_result)
-                        
-                        # Store pending request
-                        if user_id:
-                            self.pending_logo_requests[user_id] = logo_result
-                        
-                        return (preview_text, False, None, logo_result)
-                except Exception as e:
-                    print(f"Error re-processing logo request: {e}")
+                # Check if user provided specific changes or new request
+                if len(user_message.split()) > 2:  # More than just "no" or "search again"
+                    # User provided specific refinement, re-process with new request
+                    try:
+                        logo_result = self.logo_agent.process_logo_request(user_message)
+                        if logo_result.get('success'):
+                            preview_text = self.logo_agent.format_preview_for_user(logo_result)
+                            
+                            # Store pending request
+                            if user_id:
+                                self.pending_logo_requests[user_id] = logo_result
+                            
+                            return (preview_text, False, None, logo_result)
+                    except Exception as e:
+                        print(f"Error re-processing logo request: {e}")
+                else:
+                    # User just said no without specifics, ask for clarification
+                    return (
+                        "No problem! Would you like to:\n\n1️⃣ Search for a different reference logo\n2️⃣ Describe a different logo style or concept\n3️⃣ Proceed without references\n\nWhat changes would you like to make? 🎨",
+                        False,
+                        None,
+                        None
+                    )
         
         try:
             # Build messages array
@@ -314,7 +323,8 @@ class MistralChatManager:
                         # Continue with normal response
             
             # Check if this is a logo generation request
-            if self.is_image_generation_request(user_message):
+            # Only use Logo Reference Agent when web search is ENABLED
+            if self.is_image_generation_request(user_message) and use_web_search:
                 try:
                     # Use Logo Reference Agent to gather references and create optimized prompt
                     logo_result = self.logo_agent.process_logo_request(user_message)

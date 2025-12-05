@@ -321,6 +321,12 @@ async function sendMessage() {
                                         <span class="metadata-label">Model:</span>
                                         <span>${generateData.metadata.model}</span>
                                     </div>
+                                    ${generateData.metadata.lora ? `
+                                    <div class="metadata-row">
+                                        <span class="metadata-label">LoRA:</span>
+                                        <span>${generateData.metadata.lora}</span>
+                                    </div>
+                                    ` : ''}
                                     <div class="metadata-row">
                                         <span class="metadata-label">Steps:</span>
                                         <span>${generateData.metadata.steps}</span>
@@ -329,6 +335,12 @@ async function sendMessage() {
                                         <span class="metadata-label">Dimensions:</span>
                                         <span>${generateData.metadata.dimensions}</span>
                                     </div>
+                                    ${generateData.metadata.ip_adapter_scale ? `
+                                    <div class="metadata-row">
+                                        <span class="metadata-label">IP-Adapter Scale:</span>
+                                        <span>${generateData.metadata.ip_adapter_scale}</span>
+                                    </div>
+                                    ` : ''}
                                     <div class="metadata-row">
                                         <span class="metadata-label">Generated:</span>
                                         <span>${generateData.metadata.timestamp}</span>
@@ -774,8 +786,11 @@ function removeReferenceImage(event) {
 document.addEventListener('change', (e) => {
     if (e.target.id === 'useLoraToggle') {
         currentSettings.use_lora = e.target.checked;
+        console.log('LoRA enabled:', currentSettings.use_lora);
+        toggleLoraSettings();
     } else if (e.target.id === 'loraSelect') {
         currentSettings.lora_filename = e.target.value || null;
+        console.log('LoRA filename selected:', currentSettings.lora_filename);
     }
 });
 
