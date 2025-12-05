@@ -265,22 +265,32 @@ class ModelManager:
             if redux_output is not None:
                 # FLUX Redux provides image embeddings that guide the generation
                 # We use BOTH the text prompt (what to create) and embeddings (style/reference)
-                # The pooled_image_embeds from Redux provide visual guidance
-                if hasattr(redux_output, 'to_tuple'):
-                    redux_dict = redux_output.to_tuple()[0]
-                else:
-                    redux_dict = redux_output
                 
-                # Add only the pooled embeddings for visual guidance
-                # Don't add prompt_embeds to avoid conflict with text prompt
-                if 'pooled_image_embeds' in redux_dict:
-                    gen_args["pooled_projections"] = redux_dict["pooled_image_embeds"]
-                    print(f"✓ Using Redux visual guidance with text prompt (influence: {ip_adapter_scale})")
-                elif 'image_embeds' in redux_dict:
-                    gen_args["pooled_projections"] = redux_dict["image_embeds"]
-                    print(f"✓ Using Redux visual guidance with text prompt (influence: {ip_adapter_scale})")
-                else:
-                    print("⚠️ Redux output format unexpected, using text prompt only")
+                # Redux output is a namespace/dict-like object, not a regular dict
+                # Extract the pooled embeddings for visual guidance
+                try:
+                    # Try different ways to access Redux embeddings
+                    if hasattr(redux_output, 'pooled_image_embeds'):
+                        gen_args["pooled_projections"] = redux_output.pooled_image_embeds
+                        print(f"✓ Using Redux pooled_image_embeds with text prompt (influence: {ip_adapter_scale})")
+                    elif hasattr(redux_output, 'image_embeds'):
+                        gen_args["pooled_projections"] = redux_output.image_embeds
+                        print(f"✓ Using Redux image_embeds with text prompt (influence: {ip_adapter_scale})")
+                    elif isinstance(redux_output, dict):
+                        # If it's a dict, try to get embeddings
+                        if 'pooled_image_embeds' in redux_output:
+                            gen_args["pooled_projections"] = redux_output["pooled_image_embeds"]
+                            print(f"✓ Using Redux visual guidance (dict) with text prompt (influence: {ip_adapter_scale})")
+                        elif 'image_embeds' in redux_output:
+                            gen_args["pooled_projections"] = redux_output["image_embeds"]
+                            print(f"✓ Using Redux visual guidance (dict) with text prompt (influence: {ip_adapter_scale})")
+                    else:
+                        print(f"⚠️ Redux output type: {type(redux_output)}")
+                        print(f"⚠️ Redux output attributes: {dir(redux_output)}")
+                        print("⚠️ Redux output format unexpected, using text prompt only")
+                except Exception as e:
+                    print(f"⚠️ Error extracting Redux embeddings: {e}")
+                    print("⚠️ Continuing with text prompt only")
                 
                 # Adjust guidance scale based on redux influence
                 # Higher ip_adapter_scale means more influence from reference image
