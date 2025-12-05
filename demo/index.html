@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zypher AI - Logo Generator Demo</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="icon" href="assets/zypher.jpeg" type="image/jpeg">
+    <link rel="apple-touch-icon" href="assets/zypher.jpeg">
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.0/marked.min.js"></script>
+</head>
+
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <img src="assets/zypher.jpeg" alt="Zypher AI" class="logo-image" onerror="this.style.display='none'">
+                <span class="logo-text">Zypher AI</span>
+            </div>
+            <button class="new-chat-btn" onclick="newChat()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                New Chat
+            </button>
+        </div>
+
+        <div class="sidebar-content">
+            <div class="history-section">
+                <div class="history-header">
+                    <h3>Recent</h3>
+                    <button class="clear-history-btn" onclick="clearAllHistory()" title="Clear all history">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2">
+                            </path>
+                        </svg>
+                    </button>
+                </div>
+                <div id="historyList" class="history-list">
+                    <!-- History items will be populated here -->
+                </div>
+            </div>
+        </div>
+
+        <div class="sidebar-footer">
+            <div class="user-info">
+                <div class="user-avatar">AI</div>
+                <span>Demo Mode</span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Top Header -->
+        <div class="top-header">
+            <button class="menu-btn mobile-only" onclick="toggleSidebar()">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                    <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
+            </button>
+            <div class="logo mobile-only">
+                <span class="logo-icon">🎨</span>
+                <span class="logo-text">Zypher AI</span>
+            </div>
+            <div class="header-spacer"></div>
+            <div class="demo-badge">DEMO MODE</div>
+            <button class="settings-btn-header" onclick="toggleSettings()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path
+                        d="M12 1v6m0 6v6M5.6 5.6l4.2 4.2m4.2 4.2l4.2 4.2M1 12h6m6 0h6m-1.4-6.4l-4.2 4.2m-4.2 4.2l-4.2 4.2">
+                    </path>
+                </svg>
+                <span class="desktop-only">Settings</span>
+            </button>
+        </div>
+
+        <!-- Chat Container -->
+        <div class="chat-container" id="chatContainer">
+            <!-- Welcome Screen -->
+            <div id="welcomeScreen" class="welcome-screen">
+                <div class="welcome-content">
+                    <h1>
+                        <img src="assets/zypher.jpeg" alt="Zypher AI" class="logo-icon-large" onerror="this.style.display='none'">
+                        Zypher AI Logo Generator
+                    </h1>
+                    <p class="subtitle">Powered by Flux Schnell - Create stunning logos with AI</p>
+                    <div class="demo-notice">
+                        ⚠️ This is a demonstration version with pre-configured responses
+                    </div>
+
+                    <div class="example-prompts">
+                        <h3>Try asking me:</h3>
+                        <div class="prompt-cards">
+                            <button class="prompt-card" onclick="useExamplePrompt(this)">
+                                <span class="prompt-icon">🤔</span>
+                                <span class="prompt-text">What kind of logos can you create for me?</span>
+                            </button>
+                            <button class="prompt-card" onclick="useExamplePrompt(this)">
+                                <span class="prompt-icon">🚀</span>
+                                <span class="prompt-text">Create a modern tech startup logo with a rocket symbol</span>
+                            </button>
+                            <button class="prompt-card" onclick="useExamplePrompt(this)">
+                                <span class="prompt-icon">🌿</span>
+                                <span class="prompt-text">Generate an eco-friendly brand logo with a green leaf</span>
+                            </button>
+                            <button class="prompt-card" onclick="useExamplePrompt(this)">
+                                <span class="prompt-icon">📝</span>
+                                <span class="prompt-text">What design tips do you have for creating memorable logos?</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Messages Container -->
+            <div id="messages" class="messages">
+                <!-- Messages will be added here dynamically -->
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="input-container">
+            <div class="input-area-wrapper">
+                <!-- Reference Image Section -->
+                <div class="reference-image-section" id="referenceImageSection">
+                    <div class="reference-header">
+                        <div class="reference-title">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                <polyline points="21 15 16 10 5 21"></polyline>
+                            </svg>
+                            <span>Reference Image</span>
+                            <span class="optional-badge">Optional</span>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="useIpAdapterToggleInput" onchange="toggleIpAdapter(this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="reference-content" id="referenceContent" style="display: none;">
+                        <div class="image-upload-inline">
+                            <input type="file" id="referenceImageInput" accept="image/*" style="display: none;" onchange="handleImageUpload(event)">
+                            <div class="upload-area-inline" id="uploadAreaInline" onclick="document.getElementById('referenceImageInput').click()">
+                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                    <polyline points="21 15 16 10 5 21"></polyline>
+                                </svg>
+                                <p>Click to upload</p>
+                            </div>
+                            <div class="image-preview-inline" id="imagePreviewInline" style="display: none;">
+                                <img id="previewImgInline" src="" alt="Reference">
+                                <div class="preview-overlay">
+                                    <button class="remove-image-btn-inline" onclick="removeReferenceImage(event)">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                                        </svg>
+                                    </button>
+                                    <button class="change-image-btn" onclick="document.getElementById('referenceImageInput').click()">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="strength-control">
+                            <label for="ipAdapterScaleSliderInline">
+                                Influence Strength: <span id="ipAdapterScaleValueInline">50</span>%
+                            </label>
+                            <input type="range" id="ipAdapterScaleSliderInline" min="0" max="100" value="50" oninput="updateIpAdapterScale(this.value)">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Text Input with Web Search Toggle -->
+                <div class="input-wrapper">
+                    <!-- Web Search Toggle Button -->
+                    <button class="web-search-toggle" id="webSearchToggleBtn" onclick="toggleWebSearchButton()" title="Enable web search for reference logos">
+                        <svg class="web-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <path d="m21 21-4.35-4.35"></path>
+                            <path d="M11 2a9 9 0 0 0 0 18"></path>
+                            <path d="M11 2a9 9 0 0 1 0 18"></path>
+                        </svg>
+                        <span class="web-search-label">Web Search</span>
+                    </button>
+                    
+                    <textarea id="promptInput" placeholder="Ask me anything or tell me what logo you'd like to create..." 
+                              rows="1" onkeydown="handleKeyPress(event)" oninput="autoResize(this)"></textarea>
+                    <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <p class="input-hint">Press Enter to send, Shift+Enter for new line • Click 
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline; vertical-align: middle;">
+                    <circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path>
+                </svg> to enable web search for reference logos
+            </p>
+        </div>
+    </main>
+
+    <!-- Settings Modal -->
+    <div class="modal" id="settingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button class="close-btn" onclick="toggleSettings()">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <!-- Profile Settings Section -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">Profile Settings</h3>
+                    <div class="setting-group profile-settings">
+                        <div class="form-group">
+                            <label class="setting-label" for="fnameInput">First name</label>
+                            <input type="text" id="fnameInput" class="settings-input" placeholder="Enter your first name" />
+                        </div>
+
+                        <div class="form-group">
+                            <label class="setting-label" for="lnameInput">Last name</label>
+                            <input type="text" id="lnameInput" class="settings-input" placeholder="Enter your last name" />
+                        </div>
+
+                        <button class="primary-btn save-profile-btn" onclick="saveUserProfile()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                                <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                                <polyline points="7 3 7 8 15 8"></polyline>
+                            </svg>
+                            Save Profile
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Subscription Management Section -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">Subscription</h3>
+                    <div class="setting-group">
+                        <div class="plan-badge" id="planBadge">
+                            <span class="plan-text">Demo Mode</span>
+                        </div>
+                        <p class="setting-description">
+                            Free tier: 5 image generations per day • Pro: unlimited generations
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Generation Settings Section -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">Generation Settings</h3>
+                    
+                    <div class="setting-group">
+                        <label class="setting-label checkbox-label">
+                            <input type="checkbox" id="useLoraToggle" class="settings-checkbox" onchange="toggleLoraSettings()">
+                            <span class="checkmark"></span>
+                            Use LoRA Fine-tuned Model
+                        </label>
+                        <p class="setting-description">Enable your custom trained weights for specialized styles</p>
+                    </div>
+
+                    <!-- LoRA Selection (shown when LoRA is enabled) -->
+                    <div class="setting-group" id="loraSelectionGroup" style="display: none;">
+                        <label for="loraSelect" class="setting-label">
+                            Select LoRA Model:
+                        </label>
+                        <select id="loraSelect" class="settings-select">
+                            <option value="">Demo LoRA Model</option>
+                            <option value="demo1">Style Transfer v1</option>
+                            <option value="demo2">Brand Identity v2</option>
+                        </select>
+                        <p class="setting-description" id="loraCount">Demo models available</p>
+                    </div>
+
+                    <div class="setting-group slider-group">
+                        <label for="stepsSlider" class="setting-label">
+                            Inference Steps: <span id="stepsValue" class="slider-value">4</span>
+                        </label>
+                        <input type="range" id="stepsSlider" class="settings-slider" min="1" max="8" value="4" oninput="updateStepsValue(this.value)">
+                        <p class="setting-description">Flux Schnell is optimized for 1-4 steps (faster = less detailed)</p>
+                    </div>
+
+                    <div class="setting-group slider-group">
+                        <label for="widthSlider" class="setting-label">
+                            Width: <span id="widthValue" class="slider-value">1024</span>px
+                        </label>
+                        <input type="range" id="widthSlider" class="settings-slider" min="512" max="1536" step="64" value="1024" oninput="updateWidthValue(this.value)">
+                    </div>
+
+                    <div class="setting-group slider-group">
+                        <label for="heightSlider" class="setting-label">
+                            Height: <span id="heightValue" class="slider-value">1024</span>px
+                        </label>
+                        <input type="range" id="heightSlider" class="settings-slider" min="512" max="1536" step="64" value="1024" oninput="updateHeightValue(this.value)">
+                    </div>
+                </div>
+
+                <!-- Model Status Section -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">Model Status</h3>
+                    <div class="setting-group">
+                        <button class="secondary-btn status-check-btn" onclick="loadModelStatus()">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="12" y1="16" x2="12" y2="12"></line>
+                                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                            </svg>
+                            Check Model Status
+                        </button>
+                        <div id="modelStatus" class="model-status">
+                            <div class="status-message">Demo Mode - No models loaded</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- About Demo -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">About This Demo</h3>
+                    <p class="setting-description">
+                        This is a static demonstration of the Zypher AI Logo Generator interface. 
+                        All responses are pre-configured and no actual AI models are running. 
+                        Images shown are placeholder examples.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
