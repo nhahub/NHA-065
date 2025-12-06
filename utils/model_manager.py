@@ -189,13 +189,30 @@ class ModelManager:
         """
         # Ensure correct model is loaded
         if use_lora:
-            # Check if we need to load a different LoRA or load for first time
-            if not self.lora_loaded or (lora_filename and self.current_lora != lora_filename):
-                self.load_lora(lora_filename)
-        elif self.lora_loaded:
-            self.unload_lora()
-        elif not self.base_model_loaded:
-            self.load_base_model()
+            # Determine which LoRA file to use
+            lora_to_load = lora_filename if lora_filename else config.LORA_WEIGHTS_FILE
+            lora_path = os.path.join(config.LORA_MODEL_PATH, lora_to_load)
+            
+            # Check if LoRA file exists before attempting to load
+            if not os.path.exists(lora_path):
+                print(f"⚠️  Warning: LoRA file not found: {lora_path}")
+                print("   Falling back to base model without LoRA")
+                use_lora = False  # Override to use base model
+                if self.lora_loaded:
+                    self.unload_lora()
+                elif not self.base_model_loaded:
+                    self.load_base_model()
+            else:
+                # Check if we need to load a different LoRA or load for first time
+                if not self.lora_loaded or (lora_filename and self.current_lora != lora_filename):
+                    self.load_lora(lora_filename)
+        
+        # If not using LoRA, ensure we're using base model
+        if not use_lora:
+            if self.lora_loaded:
+                self.unload_lora()
+            elif not self.base_model_loaded:
+                self.load_base_model()
         
         # Load FLUX Redux if reference image provided and not loaded
         if reference_image is not None and not self.redux_loaded:
